@@ -176,19 +176,19 @@
 ---
 
 ## 微階段 11：GitHub 專案發布與說明文件建置 (Git & GitHub Deployment)
-- [ ] 11.1 撰寫專案完整說明文件 (`README.md`)
-  - [ ] 11.1.1 撰寫專案簡介與核心特點（動態純目錄階層、最後目錄檔案檢索、遠端路徑瀏覽器、Excel 貼上自適應、Windows 11 SAC 免疫）
-  - [ ] 11.1.2 撰寫系統架構與相依套件說明（Python 3.10+、CustomTkinter、Paramiko、OpenPyXL）
-  - [ ] 11.1.3 撰寫快速開始與開發環境安裝教學（`start.bat` 一鍵啟動）
-  - [ ] 11.1.4 撰寫打包發布教學（`build_exe.bat` 單檔 EXE 編譯與 `build_portable.bat` 綠色便攜包製作）
-  - [ ] 11.1.5 撰寫操作說明與 Excel 貼上對照範例（多層目錄貼上格式、比對模式切換、目標檔案萬用字元過濾）
-- [ ] 11.2 Git 版本控制初始化與配置
-  - [ ] 11.2.1 檢查 `.gitignore` 確保排除了 `build/`、`dist/`、`__pycache__/`、`config.json` 等暫存與隱私檔案
-  - [ ] 11.2.2 執行 `git init` 初始化本地儲存庫
-  - [ ] 11.2.3 建立/切換至 `main` 主要分支 (`git branch -M main`)
-  - [ ] 11.2.4 設定遠端儲存庫位址 `https://github.com/powpow088/FTPtool_byList.git`
-- [ ] 11.3 提交與推送代碼至 GitHub
-  - [ ] 11.3.1 暫存所有原始碼、測試、說明文件與建置腳本 (`git add .`)
-  - [ ] 11.3.2 建立初始 Commit (`git commit -m "..."`)
-  - [ ] 11.3.3 推送代碼至遠端儲存庫 `origin main`
-  - [ ] 11.3.4 驗證推送結果與遠端同步狀態
+- [x] 11.1 撰寫專案完整說明文件 (`README.md`)
+  - [x] 11.1.1 撰寫專案簡介與核心特點（動態純目錄階層、最後目錄檔案檢索、遠端路徑瀏覽器、Excel 貼上自適應、Windows 11 SAC 免疫）
+  - [x] 11.1.2 撰寫系統架構與相依套件說明（Python 3.10+、CustomTkinter、Paramiko、OpenPyXL）
+  - [x] 11.1.3 撰寫快速開始與開發環境安裝教學（`start.bat` 一鍵啟動）
+  - [x] 11.1.4 撰寫打包發布教學（`build_exe.bat` 單檔 EXE 編譯與 `build_portable.bat` 綠色便攜包製作）
+  - [x] 11.1.5 撰寫操作說明與 Excel 貼上對照範例（多層目錄貼上格式、比對模式切換、目標檔案萬用字元過濾）
+- [x] 11.2 Git 版本控制初始化與配置
+  - [x] 11.2.1 檢查 `.gitignore` 確保排除了 `build/`、`dist/`、`__pycache__/`、`config.json` 等暫存與隱私檔案
+  - [x] 11.2.2 執行 `git init` 初始化本地儲存庫
+  - [x] 11.2.3 建立/切換至 `main` 主要分支 (`git branch -M main`)
+  - [x] 11.2.4 設定遠端儲存庫位址 `https://github.com/powpow088/FTPtool_byList.git`
+- [x] 11.3 提交與推送代碼至 GitHub
+  - [x] 11.3.1 暫存所有原始碼、測試、說明文件與建置腳本 (`git add .`)
+  - [x] 11.3.2 建立初始 Commit (`git commit -m "..."`)
+  - [x] 11.3.3 推送代碼至遠端儲存庫 `origin main`
+  - [x] 11.3.4 驗證推送結果與遠端同步狀態
