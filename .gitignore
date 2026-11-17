@@ -1,0 +1,22 @@
+# Python cache & temp
+__pycache__/
+*.py[cod]
+*$py.class
+*.part
+.sftp_probe.tmp
+.DS_Store
+
+# Build & Dist artifacts
+build/
+dist/
+*.egg-info/
+
+# Tests temp directories
+test_*_tmp/
+tests/temp_test_dl/
+tests/*_tmp/
+tests/temp_*/
+下載清單_*.csv
+
+# User specific configuration
+config.json
