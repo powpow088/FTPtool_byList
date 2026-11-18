@@ -13,6 +13,18 @@ from core.traverse_engine import TraverseEngine
 from core.download_manager import DownloadManager
 
 
+def format_bytes(size: int) -> str:
+    """將 Bytes 數值格式化為易讀容量字串"""
+    s = float(size)
+    for unit in ["B", "KB", "MB", "GB", "TB"]:
+        if s < 1024.0 or unit == "TB":
+            if unit == "B":
+                return f"{int(s)} B"
+            return f"{s:.2f} {unit}"
+        s /= 1024.0
+    return f"{size} B"
+
+
 @dataclass
 class UIEvent:
     """跨執行緒傳遞給 CustomTkinter 主迴圈的事件封包"""
@@ -44,13 +56,15 @@ class DownloadWorker(threading.Thread):
         ui_queue: queue.Queue[UIEvent],
         sftp_config: SFTPConfig,
         search_settings: SearchSettings,
-        rules: List[RuleItem]
+        rules: List[RuleItem],
+        scan_only: bool = False
     ) -> None:
         super().__init__(daemon=True)
         self._q = ui_queue
         self._sftp_config = sftp_config
         self._search_settings = search_settings
         self._rules = rules
+        self._scan_only = scan_only
         self._cancel_event = threading.Event()
 
         self._last_file_emit_time: float = 0.0
@@ -82,13 +96,38 @@ class DownloadWorker(threading.Thread):
                 stats_cb=lambda s: self._throttled_emit_stats(s, force=False)
             )
             tasks = traverse_engine.scan_all(self._rules, stats)
+            empty_records = getattr(traverse_engine, "empty_records", [])
             self._throttled_emit_stats(stats, force=True)
+
+            # 純檢索模式 (Scan-Only)
+            if self._scan_only:
+                self._q.put(UIEvent("OVERALL_PROG", 1.0))
+                manifest_csv_path = DownloadManager.generate_scan_manifest_csv(
+                    tasks, empty_records, self._search_settings.local_save_path
+                )
+                total_bytes = sum(t.file_size for t in tasks)
+                readable_total = format_bytes(total_bytes)
+                if manifest_csv_path:
+                    self._emit_log(LogLevel.SUCCESS, f"已自動生成檢索清單：{manifest_csv_path}")
+
+                summary = (
+                    f"檢索完成！掃描目錄: {stats.scanned_dirs} | "
+                    f"命中檔案: {len(tasks)} (共 {readable_total}) | "
+                    f"空/無效目錄: {len(empty_records)}"
+                )
+                self._emit_log(LogLevel.SUCCESS, summary)
+                self._q.put(UIEvent("FINISHED", (True, summary, [], manifest_csv_path)))
+                return
 
             total_files = len(tasks)
             if total_files == 0:
                 self._q.put(UIEvent("OVERALL_PROG", 1.0))
                 self._emit_log(LogLevel.WARNING, "掃描完成，未找到任何符合條件的檔案。")
-                self._q.put(UIEvent("FINISHED", (True, "掃描完成，無符合條件之檔案。", records, None)))
+                if empty_records:
+                    manifest_csv_path = DownloadManager.generate_manifest_csv(
+                        empty_records, self._search_settings.local_save_path
+                    )
+                self._q.put(UIEvent("FINISHED", (True, "掃描完成，無符合條件之檔案。", records, manifest_csv_path)))
                 return
 
             self._emit_log(LogLevel.INFO, f"共找到 {total_files} 個目標檔案，開始執行鏡像下載...")
@@ -118,9 +157,10 @@ class DownloadWorker(threading.Thread):
 
             self._throttled_emit_stats(stats, force=True)
 
-            # 階段三：自動產出本地完整下載清單 Manifest CSV
+            # 階段三：自動產出本地完整下載清單 Manifest CSV (合併下載結果與空目錄紀錄)
+            all_records = records + empty_records
             manifest_csv_path = DownloadManager.generate_manifest_csv(
-                records, self._search_settings.local_save_path
+                all_records, self._search_settings.local_save_path
             )
             if manifest_csv_path:
                 self._emit_log(LogLevel.SUCCESS, f"已自動生成完整下載清單：{manifest_csv_path}")
@@ -134,9 +174,10 @@ class DownloadWorker(threading.Thread):
 
         except TaskCancelledError:
             self._throttled_emit_stats(stats, force=True)
-            if records:
+            all_records = records + getattr(traverse_engine, "empty_records", []) if 'traverse_engine' in locals() else records
+            if all_records:
                 manifest_csv_path = DownloadManager.generate_manifest_csv(
-                    records, self._search_settings.local_save_path
+                    all_records, self._search_settings.local_save_path
                 )
             msg = "任務已由使用者安全中止（已下載檔案與清單皆已保留）。"
             self._emit_log(LogLevel.WARNING, msg)

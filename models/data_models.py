@@ -1,3 +1,5 @@
+import datetime
+import os
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import List, Dict, Set, Optional
@@ -40,6 +42,9 @@ class TransferStatus(Enum):
     SKIPPED = "已略過"
     FAILED = "失敗"
     CANCELLED = "已取消"
+    INDEXED = "已檢索 (未下載)"
+    EMPTY_DIR = "空目錄 (無相符檔案)"
+    DIR_NOT_FOUND = "目錄不存在"
 
 
 class TaskCancelledError(Exception):
@@ -181,6 +186,7 @@ class ReportRecord:
     dirs: List[str] = field(default_factory=list)
     filename: str = ""
     file_size: int = 0
+    file_mtime: int = 0
     status: TransferStatus = TransferStatus.SUCCESS
     message: str = ""
     timestamp: str = ""
@@ -196,7 +202,8 @@ class ReportRecord:
         status: TransferStatus = TransferStatus.SUCCESS,
         message: str = "",
         timestamp: str = "",
-        dirs: Optional[List[str]] = None
+        dirs: Optional[List[str]] = None,
+        file_mtime: int = 0
     ):
         self.remote_path = remote_path
         self.local_path = local_path
@@ -208,6 +215,7 @@ class ReportRecord:
             self.dirs = []
         self.filename = filename
         self.file_size = file_size
+        self.file_mtime = file_mtime
         self.status = status
         self.message = message
         self.timestamp = timestamp
@@ -231,3 +239,21 @@ class ReportRecord:
                 return f"{size:.2f} {unit}"
             size /= 1024.0
         return f"{self.file_size} B"
+
+    @property
+    def mtime_str(self) -> str:
+        """將 Unix Timestamp 轉換為 YYYY-MM-DD HH:MM:SS 易讀格式"""
+        if not self.file_mtime or self.file_mtime <= 0:
+            return ""
+        try:
+            return datetime.datetime.fromtimestamp(self.file_mtime).strftime("%Y-%m-%d %H:%M:%S")
+        except Exception:
+            return ""
+
+    @property
+    def file_ext(self) -> str:
+        """提取檔案小寫副檔名（含小數點，例如 .csv），若無檔名則為空字串"""
+        if not self.filename:
+            return ""
+        _, ext = os.path.splitext(self.filename)
+        return ext.lower()

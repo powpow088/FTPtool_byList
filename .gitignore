@@ -14,9 +14,11 @@ dist/
 # Tests temp directories
 test_*_tmp/
 tests/temp_test_dl/
-tests/*_tmp/
 tests/temp_*/
 下載清單_*.csv
+檢索清單_*.csv
+檔案清單_*.csv
 
 # User specific configuration
 config.json
+

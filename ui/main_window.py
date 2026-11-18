@@ -205,6 +205,12 @@ class MainWindow(ctk.CTk):
         ctrl_frame = ctk.CTkFrame(mon_frame, fg_color="transparent")
         ctrl_frame.grid(row=3, column=0, sticky="ew", padx=5, pady=5)
 
+        self.btn_scan_only = ctk.CTkButton(
+            ctrl_frame, text="🔍 僅搜尋與產出清單", font=("Microsoft JhengHei UI", 12, "bold"),
+            fg_color="#17A2B8", hover_color="#138496", command=self._on_scan_only_task
+        )
+        self.btn_scan_only.pack(side="left", padx=5)
+
         self.btn_start = ctk.CTkButton(
             ctrl_frame, text="▶ 開始搜尋與下載", font=("Microsoft JhengHei UI", 12, "bold"),
             fg_color="#28A745", hover_color="#218838", command=self._on_start_task
@@ -271,14 +277,18 @@ class MainWindow(ctk.CTk):
                     self.lbl_file_prog.configure(text="目前檔案: 任務結束")
 
                     if manifest_path and os.path.exists(manifest_path):
+                        csv_name = os.path.basename(manifest_path)
+                        is_scan_report = "檢索清單" in csv_name
+                        dialog_title = "檢索任務完成" if is_scan_report else "下載任務完成"
+                        desc_title = "檢索清單 CSV" if is_scan_report else "下載清單 CSV"
                         ans = messagebox.askyesno(
-                            "下載任務完成",
-                            f"{summary_msg}\n\n已為您自動產出完整下載清單 CSV：\n{os.path.basename(manifest_path)}\n\n是否立即以 Excel 開啟清單？"
+                            dialog_title,
+                            f"{summary_msg}\n\n已為您自動產出完整{desc_title}：\n{csv_name}\n\n是否立即以 Excel 開啟清單？"
                         )
                         if ans:
                             os.startfile(manifest_path)
                     else:
-                        messagebox.showinfo("下載任務結束", summary_msg)
+                        messagebox.showinfo("任務結束", summary_msg)
                 elif event.event_type == "TEST_RESULT":
                     ok, msg = event.payload
                     self.btn_test_conn.configure(state="normal", text="測試連線")
@@ -435,6 +445,23 @@ class MainWindow(ctk.CTk):
         self._test_worker = ConnectionTestWorker(self._ui_queue, sftp_cfg)
         self._test_worker.start()
 
+    def _on_scan_only_task(self) -> None:
+        """僅搜尋遠端目錄並產出清單 (不下載二進位實體檔案)"""
+        if not self._validate_inputs(require_rules=True):
+            return
+
+        sftp_cfg, search_cfg, rules = self._collect_current_config()
+        ConfigManager.save_config(sftp_cfg, search_cfg, rules)
+
+        self._last_records.clear()
+        self._last_manifest_csv = None
+        self.progress_bar.set(0.0)
+        self.lbl_file_prog.configure(text="目前檔案: 僅搜尋目錄與檔案清單中...")
+        self._set_running_state(True)
+
+        self._dl_worker = DownloadWorker(self._ui_queue, sftp_cfg, search_cfg, rules, scan_only=True)
+        self._dl_worker.start()
+
     def _on_start_task(self) -> None:
         if not self._validate_inputs(require_rules=True):
             return
@@ -458,6 +485,7 @@ class MainWindow(ctk.CTk):
             self._dl_worker.request_cancel()
 
     def _set_running_state(self, running: bool) -> None:
+        self.btn_scan_only.configure(state="disabled" if running else "normal")
         self.btn_start.configure(state="disabled" if running else "normal")
         self.btn_test_conn.configure(state="disabled" if running else "normal")
         self.btn_browse_remote.configure(state="disabled" if running else "normal")
@@ -507,18 +535,19 @@ class MainWindow(ctk.CTk):
             self.ed_local_path.insert(0, os.path.normpath(folder))
 
     def _on_open_manifest(self) -> None:
-        """一鍵開啟當次任務產出的下載清單 CSV"""
+        """一鍵開啟當次任務產出的清單 CSV (支援下載清單與檢索清單)"""
         if self._last_manifest_csv and os.path.exists(self._last_manifest_csv):
             os.startfile(self._last_manifest_csv)
         else:
-            # 嘗試到本地儲存路徑尋找最新的一份清單
+            # 嘗試到本地儲存路徑尋找最新的一份清單 (下載清單或檢索清單)
             local_dir = self.ed_local_path.get().strip()
             if local_dir and os.path.exists(local_dir):
-                csvs = sorted(Path(local_dir).glob("下載清單_*.csv"), key=os.path.getmtime, reverse=True)
+                all_csvs = list(Path(local_dir).glob("下載清單_*.csv")) + list(Path(local_dir).glob("檢索清單_*.csv"))
+                csvs = sorted(all_csvs, key=os.path.getmtime, reverse=True)
                 if csvs:
                     os.startfile(str(csvs[0]))
                     return
-            messagebox.showinfo("提示", "目前尚未找到產出的下載清單 CSV，請先執行下載任務。")
+            messagebox.showinfo("提示", "目前尚未找到產出的清單 CSV，請先執行搜尋或下載任務。")
 
     def _on_open_local_folder(self) -> None:
         local_dir = self.ed_local_path.get().strip()

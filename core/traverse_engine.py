@@ -10,7 +10,8 @@ from typing import List, Dict, Set, Callable, Tuple, Optional
 import paramiko
 
 from models.data_models import (
-    RuleItem, SearchSettings, RemoteFileTask, TaskStats, LogLevel, TaskCancelledError, MatchMode
+    RuleItem, SearchSettings, RemoteFileTask, TaskStats, LogLevel, TaskCancelledError, MatchMode,
+    ReportRecord, TransferStatus
 )
 from core.sftp_manager import SFTPManager
 
@@ -42,6 +43,7 @@ class TraverseEngine:
         self._cancel_event = cancel_event
         self._log = log_cb
         self._stats_cb = stats_cb
+        self.empty_records: List[ReportRecord] = []
 
     @staticmethod
     def compile_rule_tree(
@@ -109,6 +111,7 @@ class TraverseEngine:
     def scan_all(self, rules: List[RuleItem], stats: TaskStats) -> List[RemoteFileTask]:
         """執行動態純目錄多層遍歷，並於最後一層目錄檢索目標檔案"""
         self._check_cancel()
+        self.empty_records = []
         global_pat = self._settings.global_pattern.strip()
         match_mode = getattr(self._settings, "match_mode", MatchMode.FUZZY)
 
@@ -117,19 +120,19 @@ class TraverseEngine:
             # 預設兩層全選
             valid_rules = [RuleItem(dirs=["", ""], file_pattern=global_pat)]
 
-        # 正規化每筆規則為 (dirs: tuple, file_pattern: str)
-        norm_rules: List[Tuple[Tuple[str, ...], str]] = []
-        for r in valid_rules:
+        # 正規化每筆規則為 (rule_idx: int, dirs: tuple, file_pattern: str)
+        norm_rules: List[Tuple[int, Tuple[str, ...], str]] = []
+        for idx, r in enumerate(valid_rules):
             d_tuple = tuple(d.strip() for d in r.dirs)
             f_pat = r.file_pattern.strip() if r.file_pattern.strip() else global_pat
-            norm_rules.append((d_tuple, f_pat))
+            norm_rules.append((idx, d_tuple, f_pat))
 
         self._log(LogLevel.INFO, f"開始掃描遠端根目錄: {self._initial_path}")
         mode_desc = "完全精準相符" if match_mode == MatchMode.EXACT else "模糊包含"
         self._log(LogLevel.INFO, f"目錄比對模式: {mode_desc}")
         self._log(LogLevel.INFO, f"目標檔案過濾條件: [{global_pat or '全部檔案'}]")
 
-        active_paths: Dict[Tuple[str, ...], Set[Tuple[Tuple[str, ...], str]]] = {
+        active_paths: Dict[Tuple[str, ...], Set[Tuple[int, Tuple[str, ...], str]]] = {
             (): set(norm_rules)
         }
 
@@ -155,22 +158,22 @@ class TraverseEngine:
             has_more_dirs = any(
                 len(rem_dirs) > 0
                 for rule_set in active_paths.values()
-                for rem_dirs, _ in rule_set
+                for _, rem_dirs, _ in rule_set
             )
             if not has_more_dirs:
                 break
 
-            next_active_paths: Dict[Tuple[str, ...], Set[Tuple[Tuple[str, ...], str]]] = defaultdict(set)
+            next_active_paths: Dict[Tuple[str, ...], Set[Tuple[int, Tuple[str, ...], str]]] = defaultdict(set)
 
             for phys_tuple, rule_set in active_paths.items():
-                to_advance: Dict[str, Set[Tuple[Tuple[str, ...], str]]] = defaultdict(set)
-                for rem_dirs, f_pat in rule_set:
+                to_advance: Dict[str, Set[Tuple[int, Tuple[str, ...], str]]] = defaultdict(set)
+                for r_idx, rem_dirs, f_pat in rule_set:
                     if len(rem_dirs) > 0:
                         next_dir_rule = rem_dirs[0]
                         rem_rest = rem_dirs[1:]
-                        to_advance[next_dir_rule].add((rem_rest, f_pat))
+                        to_advance[next_dir_rule].add((r_idx, rem_rest, f_pat))
                     else:
-                        next_active_paths[phys_tuple].add(((), f_pat))
+                        next_active_paths[phys_tuple].add((r_idx, (), f_pat))
 
                 if not to_advance:
                     continue
@@ -188,16 +191,36 @@ class TraverseEngine:
             current_depth = max((len(p) for p in active_paths.keys()), default=0)
             self._log(LogLevel.INFO, f"第 {current_depth} 層目錄比對完成，命中 {len(active_paths)} 個有效路徑。")
 
+        # 檢查是否有未匹配到任何實體目錄的規則 (目錄不存在)
+        reached_rule_indices = {r_idx for rule_set in active_paths.values() for r_idx, _, _ in rule_set}
+        for r_idx, d_tuple, f_pat in norm_rules:
+            if r_idx not in reached_rule_indices:
+                remote_dir = posixpath.join(self._initial_path, *d_tuple) if d_tuple else self._initial_path
+                local_dir = os.path.join(self._settings.local_save_path, *d_tuple) if d_tuple else self._settings.local_save_path
+                self.empty_records.append(
+                    ReportRecord(
+                        remote_path=remote_dir,
+                        local_path=local_dir,
+                        dirs=list(d_tuple),
+                        filename="(目錄不存在)",
+                        file_size=0,
+                        file_mtime=0,
+                        status=TransferStatus.DIR_NOT_FOUND,
+                        message="遠端未找到符合此條件之資料夾"
+                    )
+                )
+
         # 最終階段：在所有終端實體目錄（最後一層目錄）中，檢索符合條件之目標檔案
         tasks: List[RemoteFileTask] = []
         seen_remote_files: Set[str] = set()
 
         for phys_tuple, rule_set in active_paths.items():
             self._check_cancel()
-            file_patterns = {f_pat for _, f_pat in rule_set}
+            file_patterns = {f_pat for _, _, f_pat in rule_set}
             if not file_patterns:
                 file_patterns = {global_pat}
 
+            matched_in_dir = 0
             entries = get_entries(phys_tuple, is_root=(len(phys_tuple) == 0))
             for entry in entries:
                 if not stat.S_ISREG(entry.st_mode or 0):
@@ -212,6 +235,7 @@ class TraverseEngine:
                     if full_remote in seen_remote_files:
                         continue
                     seen_remote_files.add(full_remote)
+                    matched_in_dir += 1
 
                     local_file_path = (
                         os.path.join(self._settings.local_save_path, *phys_tuple, fname)
@@ -229,6 +253,23 @@ class TraverseEngine:
                         )
                     )
                     stats.matched_files += 1
+
+            if matched_in_dir == 0:
+                # 該終端實體目錄底下無相符檔案
+                remote_dir = posixpath.join(self._initial_path, *phys_tuple) if phys_tuple else self._initial_path
+                local_dir = os.path.join(self._settings.local_save_path, *phys_tuple) if phys_tuple else self._settings.local_save_path
+                self.empty_records.append(
+                    ReportRecord(
+                        remote_path=remote_dir,
+                        local_path=local_dir,
+                        dirs=list(phys_tuple),
+                        filename="(無相符檔案)",
+                        file_size=0,
+                        file_mtime=0,
+                        status=TransferStatus.EMPTY_DIR,
+                        message="該目錄下無相符之目標檔案"
+                    )
+                )
 
             self._stats_cb(stats)
 

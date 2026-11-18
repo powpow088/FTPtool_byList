@@ -192,3 +192,36 @@
   - [x] 11.3.2 建立初始 Commit (`git commit -m "..."`)
   - [x] 11.3.3 推送代碼至遠端儲存庫 `origin main`
   - [x] 11.3.4 驗證推送結果與遠端同步狀態
+
+---
+
+## 微階段 12：純檢索模式 (Scan-Only) 與檔案修改時間/副檔名實作 (Scan-Only & File Metadata)
+- [x] 12.1 擴充資料模型層 (`models/data_models.py`)
+  - [x] 12.1.1 擴充 `TransferStatus(Enum)`：新增 `INDEXED = "已檢索 (未下載)"`、`EMPTY_DIR = "空目錄 (無相符檔案)"`、`DIR_NOT_FOUND = "目錄不存在"`
+  - [x] 12.1.2 擴充 `ReportRecord` 資料類別：新增 `file_mtime: int = 0` 屬性儲存遠端 Unix 時間戳記
+  - [x] 12.1.3 實作 `ReportRecord.mtime_str` 計算屬性：將 `file_mtime` 格式化為 `YYYY-MM-DD HH:MM:SS` 字串（若無時間則為空字串）
+  - [x] 12.1.4 實作 `ReportRecord.file_ext` 計算屬性：提取小寫副檔名（如 `.csv`、`.txt`）
+- [x] 12.2 擴充報表生成器與純檢索清單封裝 (`core/download_manager.py`)
+  - [x] 12.2.1 升級 `generate_manifest_csv` 表頭與欄位：納入 `副檔名`、`檔案修改時間`、`處理狀態`、`處理說明`、`遠端完整路徑`、`本地完整路徑`、`完成時間` 等 12 大欄位
+  - [x] 12.2.2 支援純檢索清冊命名規則：純檢索模式下檔名產生為 `檢索清單_YYYYMMDD_HHMMSS.csv`，一般下載維持 `下載清單_YYYYMMDD_HHMMSS.csv`
+  - [x] 12.2.3 實作 `generate_scan_manifest_csv()`：接收檢索出的檔案任務清單與空目錄清單，直接批次寫入 CSV 報表
+- [x] 12.3 走訪引擎記錄空目錄與未匹配目錄 (`core/traverse_engine.py`)
+  - [x] 12.3.1 在 `scan_all()` 中追蹤每條目錄規則之終端目錄走訪結果
+  - [x] 12.3.2 若終端目錄無相符檔案，產生標記為 `EMPTY_DIR` 之紀錄物件
+  - [x] 12.3.3 若遠端無法抵達該目錄，產生標記為 `DIR_NOT_FOUND` 之紀錄物件
+  - [x] 12.3.4 保證所有檢索出的 `RemoteFileTask` 均帶有遠端 `entry.st_mtime` 數值
+- [x] 12.4 背景工作執行緒支援純檢索模式 (`core/worker.py`)
+  - [x] 12.4.1 `DownloadWorker` 構造函式新增 `scan_only: bool = False` 參數
+  - [x] 12.4.2 在 `scan_only=True` 模式下：走訪目錄後直接產出 `檢索清單_*.csv`，跳過實際下載傳輸迴圈
+  - [x] 12.4.3 統計純檢索總檔案數與總容量大小，並透過 `UIEvent` 傳送給介面
+- [x] 12.5 主視窗 UI 整合與按鈕狀態連動 (`ui/main_window.py`)
+  - [x] 12.5.1 在底部控制按鈕列新增獨立按鈕 `[🔍 僅搜尋與產出清單]`
+  - [x] 12.5.2 實作 `on_btn_scan_only_click`：檢查主機與規則設定，啟動 `scan_only=True` 背景執行緒
+  - [x] 12.5.3 檢索期間停用輸入欄位與下載按鈕，啟用停止按鈕
+  - [x] 12.5.4 檢索完成後於狀態列更新「檢索完成！共發現 X 個檔案 (總計 Y)，清單已生成」
+  - [x] 12.5.5 自動記錄產出的最新清單絕對路徑，並解鎖 `[📑 開啟下載清單 (Excel)]` 一鍵以 Excel 開啟
+- [x] 12.6 單元測試與回歸驗證
+  - [x] 12.6.1 撰寫並執行測試腳本 `tests/test_phase9_scan_only.py`：驗證純檢索模式下無實體檔案下載、CSV 包含修改時間與副檔名、空目錄狀態正確呈現
+  - [x] 12.6.2 執行全套回歸測試 `tests/test_all.py`，確保 8 大模組測試 100% 通過
+  - [x] 12.6.3 重新執行 `build_exe.bat` 與 `build_portable.bat` 更新發布包
+  - [x] 12.6.4 提交代碼至 Git 並推送到 GitHub 遠端儲存庫

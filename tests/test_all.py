@@ -15,6 +15,7 @@ def run_all_tests():
         "tests/test_phase5.py",
         "tests/test_phase7_dynamic.py",
         "tests/test_phase8_pure_dirs.py",
+        "tests/test_phase9_scan_only.py",
     ]
 
     print("==================================================")
@@ -36,7 +37,7 @@ def run_all_tests():
 
     print("\n==================================================")
     if all_passed:
-        print("  🎉🎉🎉 全數 7 大單元與整合測試 100% 通過！ 🎉🎉🎉")
+        print("  🎉🎉🎉 全數 8 大單元與整合測試 100% 通過！ 🎉🎉🎉")
     else:
         print("  ❌ 存在未通過之測試項目，請檢修！")
     print("==================================================")

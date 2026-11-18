@@ -134,10 +134,15 @@ class DownloadManager:
         return self._make_record(task, TransferStatus.FAILED, "未知錯誤")
 
     @classmethod
-    def generate_manifest_csv(cls, records: List[ReportRecord], local_root_dir: str) -> Optional[str]:
+    def generate_manifest_csv(
+        cls,
+        records: List[ReportRecord],
+        local_root_dir: str,
+        prefix: str = "下載清單"
+    ) -> Optional[str]:
         """
-        在本地儲存目標目錄根目錄下自動產出完整下載清單 CSV (Manifest CSV)。
-        包含詳細欄位，支援動態多層目錄，採用 utf-8-sig 編碼確保 Excel 雙擊不亂碼。
+        在本地儲存目標目錄根目錄下自動產出完整清單 CSV (Manifest CSV)。
+        包含詳細 12 大欄位，支援動態多層目錄，採用 utf-8-sig 編碼確保 Excel 雙擊不亂碼。
         回傳生成的 CSV 完整絕對路徑。
         """
         if not records or not local_root_dir:
@@ -146,7 +151,7 @@ class DownloadManager:
         try:
             os.makedirs(local_root_dir, exist_ok=True)
             timestamp_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            csv_filename = f"下載清單_{timestamp_str}.csv"
+            csv_filename = f"{prefix}_{timestamp_str}.csv"
             csv_full_path = os.path.join(local_root_dir, csv_filename)
 
             max_dir_count = max((len(r.dirs) for r in records), default=2)
@@ -157,12 +162,14 @@ class DownloadManager:
                 headers.append(f"第 {i + 1} 層目錄")
             headers.extend([
                 "檔案名稱",
-                "本地完整路徑",
-                "遠端完整路徑",
+                "副檔名",
                 "檔案大小 (Bytes)",
                 "檔案大小 (易讀)",
+                "檔案修改時間",
                 "處理狀態",
                 "處理說明",
+                "遠端完整路徑",
+                "本地完整路徑",
                 "完成時間"
             ])
 
@@ -176,12 +183,14 @@ class DownloadManager:
                     row.extend(row_dirs)
                     row.extend([
                         r.filename,
-                        r.local_path,
-                        r.remote_path,
-                        str(r.file_size),
-                        r.readable_size,
+                        r.file_ext,
+                        str(r.file_size) if r.file_size > 0 or r.filename else "",
+                        r.readable_size if r.file_size > 0 or r.filename else "",
+                        r.mtime_str,
                         r.status.value,
                         r.message,
+                        r.remote_path,
+                        r.local_path,
                         r.timestamp
                     ])
                     writer.writerow(row)
@@ -191,6 +200,43 @@ class DownloadManager:
         except Exception as e:
             return None
 
+    @classmethod
+    def generate_scan_manifest_csv(
+        cls,
+        tasks: List[RemoteFileTask],
+        empty_records: List[ReportRecord],
+        local_root_dir: str
+    ) -> Optional[str]:
+        """
+        專為「僅搜尋並產出清單 (Scan-Only)」模式設計的報表生成器。
+        將已檢索的任務與空目錄紀錄整合輸出為 檢索清單_YYYYMMDD_HHMMSS.csv。
+        """
+        now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        records: List[ReportRecord] = []
+
+        # 1. 將成功檢索出的檔案加入清單
+        for t in tasks:
+            rec = ReportRecord(
+                remote_path=t.remote_full_path,
+                local_path=t.local_full_path,
+                dirs=t.dirs,
+                filename=t.filename,
+                file_size=t.file_size,
+                file_mtime=t.file_mtime,
+                status=TransferStatus.INDEXED,
+                message="檢索成功 (未下載)",
+                timestamp=now_str
+            )
+            records.append(rec)
+
+        # 2. 將空目錄或不存在目錄的紀錄加入清單
+        for er in empty_records:
+            if not er.timestamp:
+                er.timestamp = now_str
+            records.append(er)
+
+        return cls.generate_manifest_csv(records, local_root_dir, prefix="檢索清單")
+
     def _make_record(self, task: RemoteFileTask, status: TransferStatus, message: str) -> ReportRecord:
         now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         return ReportRecord(
@@ -199,6 +245,7 @@ class DownloadManager:
             dirs=task.dirs,
             filename=task.filename,
             file_size=task.file_size,
+            file_mtime=task.file_mtime,
             status=status,
             message=message,
             timestamp=now_str
