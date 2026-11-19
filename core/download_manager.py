@@ -138,11 +138,12 @@ class DownloadManager:
         cls,
         records: List[ReportRecord],
         local_root_dir: str,
-        prefix: str = "下載清單"
+        prefix: str = "下載清單",
+        include_local_path: bool = True
     ) -> Optional[str]:
         """
         在本地儲存目標目錄根目錄下自動產出完整清單 CSV (Manifest CSV)。
-        包含詳細 12 大欄位，支援動態多層目錄，採用 utf-8-sig 編碼確保 Excel 雙擊不亂碼。
+        包含詳細欄位，支援動態多層目錄，採用 utf-8-sig 編碼確保 Excel 雙擊不亂碼。
         回傳生成的 CSV 完整絕對路徑。
         """
         if not records or not local_root_dir:
@@ -168,10 +169,11 @@ class DownloadManager:
                 "檔案修改時間",
                 "處理狀態",
                 "處理說明",
-                "遠端完整路徑",
-                "本地完整路徑",
-                "完成時間"
+                "遠端完整路徑"
             ])
+            if include_local_path:
+                headers.append("本地完整路徑")
+            headers.append("完成時間")
 
             with open(csv_full_path, "w", newline="", encoding="utf-8-sig") as f:
                 writer = csv.writer(f)
@@ -189,10 +191,11 @@ class DownloadManager:
                         r.mtime_str,
                         r.status.value,
                         r.message,
-                        r.remote_path,
-                        r.local_path,
-                        r.timestamp
+                        r.remote_path
                     ])
+                    if include_local_path:
+                        row.append(r.local_path)
+                    row.append(r.timestamp)
                     writer.writerow(row)
 
             return csv_full_path
@@ -210,15 +213,16 @@ class DownloadManager:
         """
         專為「僅搜尋並產出清單 (Scan-Only)」模式設計的報表生成器。
         將已檢索的任務與空目錄紀錄整合輸出為 檢索清單_YYYYMMDD_HHMMSS.csv。
+        純檢索模式下排除本地路徑欄位，聚焦呈現純遠端目錄與檔案資訊。
         """
         now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         records: List[ReportRecord] = []
 
-        # 1. 將成功檢索出的檔案加入清單
+        # 1. 將成功檢索出的檔案加入清單 (純檢索下 local_path 設為空字串)
         for t in tasks:
             rec = ReportRecord(
                 remote_path=t.remote_full_path,
-                local_path=t.local_full_path,
+                local_path="",
                 dirs=t.dirs,
                 filename=t.filename,
                 file_size=t.file_size,
@@ -235,7 +239,7 @@ class DownloadManager:
                 er.timestamp = now_str
             records.append(er)
 
-        return cls.generate_manifest_csv(records, local_root_dir, prefix="檢索清單")
+        return cls.generate_manifest_csv(records, local_root_dir, prefix="檢索清單", include_local_path=False)
 
     def _make_record(self, task: RemoteFileTask, status: TransferStatus, message: str) -> ReportRecord:
         now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")

@@ -225,3 +225,20 @@
   - [x] 12.6.2 執行全套回歸測試 `tests/test_all.py`，確保 8 大模組測試 100% 通過
   - [x] 12.6.3 重新執行 `build_exe.bat` 與 `build_portable.bat` 更新發布包
   - [x] 12.6.4 提交代碼至 Git 並推送到 GitHub 遠端儲存庫
+
+---
+
+## 微階段 13：純檢索清單移除本地路徑欄位優化 (Scan-Only Manifest Optimization)
+- [x] 13.1 下載管理器 CSV 產出方法支援欄位條件切換 (`core/download_manager.py`)
+  - [x] 13.1.1 `generate_manifest_csv` 新增 `include_local_path: bool = True` 參數
+  - [x] 13.1.2 當 `include_local_path=False` 時，表頭排除「本地完整路徑」欄位
+  - [x] 13.1.3 當 `include_local_path=False` 時，資料列排除 `r.local_path` 數值
+  - [x] 13.1.4 `generate_scan_manifest_csv` 呼叫 `generate_manifest_csv` 時明確傳入 `include_local_path=False`
+- [x] 13.2 規格書與說明文件同步更新 (`docs/spec.md`, `README.md`)
+  - [x] 13.2.1 更新 `docs/spec.md` 3.3 章節說明純檢索清單不含本地路徑欄位
+  - [x] 13.2.2 更新 `README.md` 清單欄位對照說明
+- [x] 13.3 單元測試與回歸驗證
+  - [x] 13.3.1 更新 `tests/test_phase9_scan_only.py`：驗證 `檢索清單_*.csv` 表頭無「本地完整路徑」欄位，純輸出遠端資訊
+  - [x] 13.3.2 執行全套回歸測試 `tests/test_all.py`，確保全數 8 大模組測試 100% 通過
+  - [x] 13.3.3 重新執行 `build_portable.bat` 與 `build_exe.py` 更新發布包
+  - [x] 13.3.4 提交代碼至 Git 並推送到 GitHub 遠端儲存庫

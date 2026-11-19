@@ -112,6 +112,8 @@ def test_phase9():
             assert "副檔名" in headers
             assert "檔案修改時間" in headers
             assert "處理狀態" in headers
+            assert "遠端完整路徑" in headers
+            assert "本地完整路徑" not in headers, "純檢索清單應排除本地完整路徑欄位！"
             assert len(reader) == 4  # header + 3 rows
             # row 1: raw_data.csv
             row1 = reader[1]
@@ -126,7 +128,7 @@ def test_phase9():
             row3 = reader[3]
             assert "(目錄不存在)" in row3
             assert "目錄不存在" in row3
-        print("  -> 檢索清單 CSV 產出、12 大欄位與狀態驗證通過！")
+        print("  -> 檢索清單 CSV 產出、純遠端欄位(無本地路徑)與狀態驗證通過！")
 
         # 3. 測試 TraverseEngine 走訪並精確捕捉「檔案」、「空目錄」與「目錄不存在」
         print("[TEST] 3. 驗證 TraverseEngine 捕捉空目錄與目錄不存在...")
