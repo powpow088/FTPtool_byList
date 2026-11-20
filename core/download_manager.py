@@ -187,12 +187,16 @@ class DownloadManager:
             csv_filename = f"{prefix}_{timestamp_str}.csv"
             csv_full_path = os.path.join(local_root_dir, csv_filename)
 
-            max_dir_count = max((len(r.dirs) for r in records), default=2)
-            max_dir_count = max(2, max_dir_count)
+            max_dir_count = max(
+                max((len(r.dirs) for r in records), default=2),
+                max((len(r.search_dirs) for r in records), default=2),
+                2
+            )
 
             headers = ["序號"]
             for i in range(max_dir_count):
                 headers.append(f"第 {i + 1} 層目錄")
+                headers.append(f"第 {i + 1} 層搜尋字")
             headers.extend([
                 "檔案名稱",
                 "副檔名",
@@ -212,9 +216,12 @@ class DownloadManager:
                 writer.writerow(headers)
 
                 for idx, r in enumerate(records, start=1):
-                    row_dirs = list(r.dirs) + [""] * (max_dir_count - len(r.dirs))
                     row = [str(idx)]
-                    row.extend(row_dirs)
+                    for i in range(max_dir_count):
+                        actual_d = r.dirs[i] if i < len(r.dirs) else ""
+                        search_d = r.search_dirs[i] if i < len(r.search_dirs) else ""
+                        row.append(actual_d)
+                        row.append(search_d)
                     row.extend([
                         r.filename,
                         r.file_ext,
@@ -256,6 +263,7 @@ class DownloadManager:
                 remote_path=t.remote_full_path,
                 local_path="",
                 dirs=t.dirs,
+                search_dirs=t.search_dirs,
                 filename=t.filename,
                 file_size=t.file_size,
                 file_mtime=t.file_mtime,
@@ -279,6 +287,7 @@ class DownloadManager:
             remote_path=task.remote_full_path,
             local_path=task.local_full_path,
             dirs=task.dirs,
+            search_dirs=task.search_dirs,
             filename=task.filename,
             file_size=task.file_size,
             file_mtime=task.file_mtime,

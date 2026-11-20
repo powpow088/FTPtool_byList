@@ -120,19 +120,19 @@ class TraverseEngine:
             # 預設兩層全選
             valid_rules = [RuleItem(dirs=["", ""], file_pattern=global_pat)]
 
-        # 正規化每筆規則為 (rule_idx: int, dirs: tuple, file_pattern: str)
-        norm_rules: List[Tuple[int, Tuple[str, ...], str]] = []
+        # 正規化每筆規則為 (rule_idx: int, orig_dirs: tuple, rem_dirs: tuple, file_pattern: str)
+        norm_rules: List[Tuple[int, Tuple[str, ...], Tuple[str, ...], str]] = []
         for idx, r in enumerate(valid_rules):
             d_tuple = tuple(d.strip() for d in r.dirs)
             f_pat = r.file_pattern.strip() if r.file_pattern.strip() else global_pat
-            norm_rules.append((idx, d_tuple, f_pat))
+            norm_rules.append((idx, d_tuple, d_tuple, f_pat))
 
         self._log(LogLevel.INFO, f"開始掃描遠端根目錄: {self._initial_path}")
         mode_desc = "完全精準相符" if match_mode == MatchMode.EXACT else "模糊包含"
         self._log(LogLevel.INFO, f"目錄比對模式: {mode_desc}")
         self._log(LogLevel.INFO, f"目標檔案過濾條件: [{global_pat or '全部檔案'}]")
 
-        active_paths: Dict[Tuple[str, ...], Set[Tuple[int, Tuple[str, ...], str]]] = {
+        active_paths: Dict[Tuple[str, ...], Set[Tuple[int, Tuple[str, ...], Tuple[str, ...], str]]] = {
             (): set(norm_rules)
         }
 
@@ -158,22 +158,22 @@ class TraverseEngine:
             has_more_dirs = any(
                 len(rem_dirs) > 0
                 for rule_set in active_paths.values()
-                for _, rem_dirs, _ in rule_set
+                for _, _, rem_dirs, _ in rule_set
             )
             if not has_more_dirs:
                 break
 
-            next_active_paths: Dict[Tuple[str, ...], Set[Tuple[int, Tuple[str, ...], str]]] = defaultdict(set)
+            next_active_paths: Dict[Tuple[str, ...], Set[Tuple[int, Tuple[str, ...], Tuple[str, ...], str]]] = defaultdict(set)
 
             for phys_tuple, rule_set in active_paths.items():
-                to_advance: Dict[str, Set[Tuple[int, Tuple[str, ...], str]]] = defaultdict(set)
-                for r_idx, rem_dirs, f_pat in rule_set:
+                to_advance: Dict[str, Set[Tuple[int, Tuple[str, ...], Tuple[str, ...], str]]] = defaultdict(set)
+                for r_idx, orig_dirs, rem_dirs, f_pat in rule_set:
                     if len(rem_dirs) > 0:
                         next_dir_rule = rem_dirs[0]
                         rem_rest = rem_dirs[1:]
-                        to_advance[next_dir_rule].add((r_idx, rem_rest, f_pat))
+                        to_advance[next_dir_rule].add((r_idx, orig_dirs, rem_rest, f_pat))
                     else:
-                        next_active_paths[phys_tuple].add((r_idx, (), f_pat))
+                        next_active_paths[phys_tuple].add((r_idx, orig_dirs, (), f_pat))
 
                 if not to_advance:
                     continue
@@ -192,16 +192,17 @@ class TraverseEngine:
             self._log(LogLevel.INFO, f"第 {current_depth} 層目錄比對完成，命中 {len(active_paths)} 個有效路徑。")
 
         # 檢查是否有未匹配到任何實體目錄的規則 (目錄不存在)
-        reached_rule_indices = {r_idx for rule_set in active_paths.values() for r_idx, _, _ in rule_set}
-        for r_idx, d_tuple, f_pat in norm_rules:
+        reached_rule_indices = {r_idx for rule_set in active_paths.values() for r_idx, _, _, _ in rule_set}
+        for r_idx, orig_d, rem_d, f_pat in norm_rules:
             if r_idx not in reached_rule_indices:
-                remote_dir = posixpath.join(self._initial_path, *d_tuple) if d_tuple else self._initial_path
-                local_dir = os.path.join(self._settings.local_save_path, *d_tuple) if d_tuple else self._settings.local_save_path
+                remote_dir = posixpath.join(self._initial_path, *orig_d) if orig_d else self._initial_path
+                local_dir = os.path.join(self._settings.local_save_path, *orig_d) if orig_d else self._settings.local_save_path
                 self.empty_records.append(
                     ReportRecord(
                         remote_path=remote_dir,
                         local_path=local_dir,
-                        dirs=list(d_tuple),
+                        dirs=list(orig_d),
+                        search_dirs=list(orig_d),
                         filename="(目錄不存在)",
                         file_size=0,
                         file_mtime=0,
@@ -216,9 +217,13 @@ class TraverseEngine:
 
         for phys_tuple, rule_set in active_paths.items():
             self._check_cancel()
-            file_patterns = {f_pat for _, _, f_pat in rule_set}
+            file_patterns = {f_pat for _, _, _, f_pat in rule_set}
             if not file_patterns:
                 file_patterns = {global_pat}
+
+            # 提取此實體目錄對應的原始規則搜尋關鍵字 (方便成對輸出到 CSV)
+            primary_orig_dirs = next(iter(rule_set))[1] if rule_set else ()
+            search_dirs_list = list(primary_orig_dirs)
 
             matched_in_dir = 0
             entries = get_entries(phys_tuple, is_root=(len(phys_tuple) == 0))
@@ -245,6 +250,7 @@ class TraverseEngine:
                     tasks.append(
                         RemoteFileTask(
                             dirs=list(phys_tuple),
+                            search_dirs=search_dirs_list,
                             filename=fname,
                             remote_full_path=full_remote,
                             local_full_path=local_file_path,
@@ -263,6 +269,7 @@ class TraverseEngine:
                         remote_path=remote_dir,
                         local_path=local_dir,
                         dirs=list(phys_tuple),
+                        search_dirs=search_dirs_list,
                         filename="(無相符檔案)",
                         file_size=0,
                         file_mtime=0,

@@ -173,24 +173,27 @@ def test_generate_manifest_csv():
         assert len(reader) == 3 # 1 row header + 2 rows records
         headers = reader[0]
         assert headers == [
-            "序號", "第 1 層目錄", "第 2 層目錄", "檔案名稱", "副檔名",
+            "序號", "第 1 層目錄", "第 1 層搜尋字", "第 2 層目錄", "第 2 層搜尋字",
+            "檔案名稱", "副檔名",
             "檔案大小 (Bytes)", "檔案大小 (易讀)", "檔案修改時間",
             "處理狀態", "處理說明", "遠端完整路徑", "本地完整路徑", "完成時間"
         ]
         row1 = reader[1]
         assert row1[0] == "1"
         assert row1[1] == "PART_A"
-        assert row1[2] == "LOT_01"
-        assert row1[3] == "report1.csv"
-        assert row1[4] == ".csv"
-        assert row1[5] == "1048576"
-        assert row1[6] == "1.00 MB"
-        assert row1[8] == "下載成功"
+        assert row1[2] == ""
+        assert row1[3] == "LOT_01"
+        assert row1[4] == ""
+        assert row1[5] == "report1.csv"
+        assert row1[6] == ".csv"
+        assert row1[7] == "1048576"
+        assert row1[8] == "1.00 MB"
+        assert row1[10] == "下載成功"
 
         row2 = reader[2]
         assert row2[0] == "2"
-        assert row2[4] == ".csv"
-        assert row2[8] == "已略過"
+        assert row2[6] == ".csv"
+        assert row2[10] == "已略過"
 
     # 清理測試目錄
     shutil.rmtree(manifest_dir, ignore_errors=True)

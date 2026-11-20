@@ -132,6 +132,7 @@ class SearchSettings:
 class RemoteFileTask:
     """代表經過多層比對後，確認要處理的遠端檔案任務"""
     dirs: List[str] = field(default_factory=list)
+    search_dirs: List[str] = field(default_factory=list)
     filename: str = ""
     remote_full_path: str = ""
     local_full_path: str = ""
@@ -147,7 +148,8 @@ class RemoteFileTask:
         local_full_path: str = "",
         file_size: int = 0,
         file_mtime: int = 0,
-        dirs: Optional[List[str]] = None
+        dirs: Optional[List[str]] = None,
+        search_dirs: Optional[List[str]] = None
     ):
         if dirs is not None:
             self.dirs = list(dirs)
@@ -155,6 +157,7 @@ class RemoteFileTask:
             self.dirs = [l1_dir, l2_dir]
         else:
             self.dirs = []
+        self.search_dirs = list(search_dirs) if search_dirs is not None else []
         self.filename = filename
         self.remote_full_path = remote_full_path
         self.local_full_path = local_full_path
@@ -186,6 +189,7 @@ class ReportRecord:
     remote_path: str
     local_path: str
     dirs: List[str] = field(default_factory=list)
+    search_dirs: List[str] = field(default_factory=list)
     filename: str = ""
     file_size: int = 0
     file_mtime: int = 0
@@ -205,7 +209,8 @@ class ReportRecord:
         message: str = "",
         timestamp: str = "",
         dirs: Optional[List[str]] = None,
-        file_mtime: int = 0
+        file_mtime: int = 0,
+        search_dirs: Optional[List[str]] = None
     ):
         self.remote_path = remote_path
         self.local_path = local_path
@@ -215,6 +220,7 @@ class ReportRecord:
             self.dirs = [l1_dir, l2_dir]
         else:
             self.dirs = []
+        self.search_dirs = list(search_dirs) if search_dirs is not None else []
         self.filename = filename
         self.file_size = file_size
         self.file_mtime = file_mtime

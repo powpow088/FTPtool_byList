@@ -275,22 +275,48 @@
 - [x] 14.1 擴充資料模型與設定項 (`models/data_models.py`)
   - [x] 14.1.1 在 `SearchSettings` 新增 `request_delay_ms: int = 50` 屬性（預設 50ms 溫和下載間隔）
   - [x] 14.1.2 在 `SearchSettings` 新增 `session_refresh_interval: int = 150` 屬性（每 150 個檔案主動換氣刷新連線）
-- [ ] 14.2 強化 SFTP 連線管理器 (`core/sftp_manager.py`)
-  - [ ] 14.2.1 將 `SOCKET_TIMEOUT` 從 15.0 秒調升為 30.0 秒，適應尖峰時段網路波動
-  - [ ] 14.2.2 實作 `is_active() -> bool` 方法：即時檢測 SSH Transport 是否存活且 SFTP Channel 未關閉
-  - [ ] 14.2.3 實作 `ensure_connected()` 方法：若連線已失效自動在背景呼叫 `reconnect()` 重建連線
-- [ ] 14.3 強化下載管理器與防崩潰機制 (`core/download_manager.py`)
-  - [ ] 14.3.1 在 `process_task` 進入前呼叫 `ensure_connected()`，杜絕「單一斷線導致後續所有檔案秒失敗」的雪崩效應
-  - [ ] 14.3.2 實作檔案下載完成後的防封鎖微延遲（支援中斷訊號感知）
-  - [ ] 14.3.3 實作「主動連線換氣 (Proactive Session Refresh)」機制：累積下載達 150 個檔案時主動優雅重置 Session，徹底避開伺服器/防火牆 10~15 分鐘強制中斷與 Rekey 異常
-  - [ ] 14.3.4 升級斷線重試退避演算法（等待時間從 1s 改為 3s、6s、12s），避免短時間密集重連觸發伺服器 Fail2ban 臨時封鎖 IP
-  - [ ] 14.3.5 強化略過訊息提示：當檔案命中 `SIZE_MTIME` 時，日誌明確標示 `[續傳略過]`
-- [ ] 14.4 主視窗 UI 新增下載頻率選單與續傳日誌 (`ui/main_window.py`)
-  - [ ] 14.4.1 在下載設定區新增「傳輸間隔:」下拉選單（`極速 (0ms)`、`穩定推薦 (50ms)`、`溫和防封 (150ms)`）
-  - [ ] 14.4.2 將選擇的間隔數值連動至 `SearchSettings.request_delay_ms`
-  - [ ] 14.4.3 持久化儲存與載入傳輸間隔設定至 `config.json`
-- [ ] 14.5 單元測試與回歸驗證
-  - [ ] 14.5.1 撰寫並執行測試腳本 `tests/test_phase10_connection_guard.py`：驗證連線健康預檢、防封鎖微延遲、主動換氣計數器、以及退避時間增長
-  - [ ] 14.5.2 執行全套回歸測試 `python tests/test_all.py`，確保 9 大模組測試 100% 通過
-  - [ ] 14.5.3 重新執行 `build_portable.bat` 與 `build_exe.py` 更新發布包
-  - [ ] 14.5.4 提交代碼至 Git 並推送到 GitHub 遠端儲存庫
+- [x] 14.2 強化 SFTP 連線管理器 (`core/sftp_manager.py`)
+  - [x] 14.2.1 將 `SOCKET_TIMEOUT` 從 15.0 秒調升為 30.0 秒，適應尖峰時段網路波動
+  - [x] 14.2.2 實作 `is_active() -> bool` 方法：即時檢測 SSH Transport 是否存活且 SFTP Channel 未關閉
+  - [x] 14.2.3 實作 `ensure_connected()` 方法：若連線已失效自動在背景呼叫 `reconnect()` 重建連線
+- [x] 14.3 強化下載管理器與防崩潰機制 (`core/download_manager.py`)
+  - [x] 14.3.1 在 `process_task` 進入前呼叫 `ensure_connected()`，杜絕「單一斷線導致後續所有檔案秒失敗」的雪崩效應
+  - [x] 14.3.2 實作檔案下載完成後的防封鎖微延遲（支援中斷訊號感知）
+  - [x] 14.3.3 實作「主動連線換氣 (Proactive Session Refresh)」機制：累積下載達 150 個檔案時主動優雅重置 Session，徹底避開伺服器/防火牆 10~15 分鐘強制中斷與 Rekey 異常
+  - [x] 14.3.4 升級斷線重試退避演算法（等待時間從 1s 改為 3s、6s、12s），避免短時間密集重連觸發伺服器 Fail2ban 臨時封鎖 IP
+  - [x] 14.3.5 強化略過訊息提示：當檔案命中 `SIZE_MTIME` 時，日誌明確標示 `[續傳略過]`
+- [x] 14.4 主視窗 UI 新增下載頻率選單與續傳日誌 (`ui/main_window.py`)
+  - [x] 14.4.1 在下載設定區新增「傳輸頻率:」下拉選單（`極速 (0ms)`、`穩定推薦 (50ms)`、`溫和防封 (150ms)`）
+  - [x] 14.4.2 將選擇的間隔數值連動至 `SearchSettings.request_delay_ms`
+  - [x] 14.4.3 持久化儲存與載入傳輸間隔設定至 `config.json`
+- [x] 14.5 單元測試與回歸驗證
+  - [x] 14.5.1 撰寫並執行測試腳本 `tests/test_phase10_connection_guard.py`：驗證連線健康預檢、防封鎖微延遲、主動換氣計數器、以及退避時間增長
+  - [x] 14.5.2 執行全套回歸測試 `python tests/test_all.py`，確保 9 大模組測試 100% 通過
+  - [x] 14.5.3 重新執行 `build_portable.bat` 與 `build_exe.py` 更新發布包
+  - [x] 14.5.4 提交代碼至 Git 並推送到 GitHub 遠端儲存庫
+
+---
+
+## 微階段 15：CSV 報表成對搜尋關鍵字欄位實作 (Matched Search Keywords in Manifest CSV - Option A)
+- [x] 15.1 擴充資料模型層 (`models/data_models.py`)
+  - [x] 15.1.1 在 `RemoteFileTask` 類別新增 `search_dirs: List[str] = field(default_factory=list)` 屬性
+  - [x] 15.1.2 在 `RemoteFileTask.__init__` 新增 `search_dirs: Optional[List[str]] = None` 參數並正確初始化
+  - [x] 15.1.3 在 `ReportRecord` 類別新增 `search_dirs: List[str] = field(default_factory=list)` 屬性
+  - [x] 15.1.4 在 `ReportRecord.__init__` 新增 `search_dirs: Optional[List[str]] = None` 參數並正確初始化
+- [x] 15.2 走訪引擎記錄匹配之目錄搜尋字 (`core/traverse_engine.py`)
+  - [x] 15.2.1 在 `scan_all()` 的路徑追蹤中保存規則原始搜尋字元組 `orig_dirs_tuple`
+  - [x] 15.2.2 檢索出檔案建立 `RemoteFileTask` 時，將命中規則的 `orig_dirs_tuple` 轉為列表賦值給 `task.search_dirs`
+  - [x] 15.2.3 產生目錄不存在紀錄 (`DIR_NOT_FOUND`) 時，將原始規則搜尋字寫入 `ReportRecord.search_dirs`
+  - [x] 15.2.4 產生終端空目錄紀錄 (`EMPTY_DIR`) 時，將命中路徑對應之規則搜尋字寫入 `ReportRecord.search_dirs`
+- [x] 15.3 擴充報表生成器成對輸出欄位 (`core/download_manager.py`)
+  - [x] 15.3.1 在 `_make_record()` 中將 `task.search_dirs` 傳遞賦值給 `ReportRecord.search_dirs`
+  - [x] 15.3.2 升級 `generate_manifest_csv()` 動態計算最大層數：取實際目錄數與搜尋字數之最大值（至少 2 層）
+  - [x] 15.3.3 升級 CSV 表頭結構：改為成對排列 `第 1 層目錄`, `第 1 層搜尋字`, `第 2 層目錄`, `第 2 層搜尋字` ...
+  - [x] 15.3.4 升級 CSV 資料列結構：依照目錄層級成對寫入實際目錄名稱與對應搜尋字
+  - [x] 15.3.5 升級 `generate_scan_manifest_csv()`：將 `task.search_dirs` 正確傳入純檢索清單紀錄
+- [x] 15.4 單元測試與發布回歸驗證
+  - [x] 15.4.1 更新既有測試案例（`tests/test_phase3.py`, `tests/test_phase9_scan_only.py`, `tests/test_phase10_connection_guard.py`）之 CSV 表頭斷言
+  - [x] 15.4.2 撰寫全新測試模組 `tests/test_phase11_paired_keywords.py`：驗證成對欄位輸出、模糊包含對照、空目錄與未匹配目錄搜尋字保留
+  - [x] 15.4.3 執行全套回歸測試 `python tests/test_all.py`，確保 10 大模組 100% 通過
+  - [x] 15.4.4 重新執行 `build_exe.py` 與 `build_portable.py` 編譯單檔 EXE 與打包便攜綠色版 ZIP
+  - [x] 15.4.5 提交代碼至 Git 並推送到 GitHub 遠端儲存庫
