@@ -27,13 +27,18 @@ class DownloadManager:
         strategy: ConflictStrategy,
         cancel_event: threading.Event,
         log_cb: Callable[[LogLevel, str], None],
-        file_progress_cb: Callable[[str, int, int], None]
+        file_progress_cb: Callable[[str, int, int], None],
+        request_delay_ms: int = 50,
+        session_refresh_interval: int = 150
     ) -> None:
         self._sftp = sftp_mgr
         self._strategy = strategy
         self._cancel_event = cancel_event
         self._log = log_cb
         self._progress_cb = file_progress_cb
+        self._request_delay_ms = max(0, request_delay_ms)
+        self._session_refresh_interval = max(0, session_refresh_interval)
+        self._processed_count = 0
 
     def _check_cancel(self) -> None:
         """檢查是否收到中止訊號"""
@@ -65,16 +70,22 @@ class DownloadManager:
         return False, ""
 
     def process_task(self, task: RemoteFileTask) -> ReportRecord:
-        """執行單一檔案檢查與下載（含 .part 暫存保護與 3 次斷線重連）"""
+        """執行單一檔案檢查與下載（含 .part 暫存保護、健康預檢、防封鎖微延遲與主動換氣）"""
         self._check_cancel()
 
-        # 1. 檢查是否符合略過條件
+        # 1. 檢查是否符合略過條件 (接關續傳保護)
         skip, reason = self.should_skip_file(task)
         if skip:
-            self._log(LogLevel.WARNING, f"[略過] {task.remote_full_path} ({reason})")
+            self._log(LogLevel.WARNING, f"[續傳略過] {task.remote_full_path} ({reason})")
             return self._make_record(task, TransferStatus.SKIPPED, reason)
 
-        # 2. 建立本地鏡像目錄
+        # 2. 連線健康預檢 (Pre-Flight Health Check，杜絕連線中斷引發雪崩式連鎖失敗)
+        try:
+            self._sftp.ensure_connected()
+        except Exception as conn_err:
+            self._log(LogLevel.WARNING, f"背景連線預檢自動重連警示: {conn_err}")
+
+        # 3. 建立本地鏡像目錄
         local_dir = os.path.dirname(task.local_full_path)
         try:
             os.makedirs(local_dir, exist_ok=True)
@@ -90,7 +101,7 @@ class DownloadManager:
                 raise TaskCancelledError("使用者於檔案傳輸途中按下停止")
             self._progress_cb(task.filename, transferred, total)
 
-        # 3. 帶 Exponential Backoff 重試機制的下載迴圈
+        # 4. 帶防封鎖冷卻退避重試機制的下載迴圈
         for attempt in range(1, self.MAX_RETRY + 1):
             self._check_cancel()
             try:
@@ -100,7 +111,27 @@ class DownloadManager:
                 os.replace(temp_path, task.local_full_path)
                 os.utime(task.local_full_path, (task.file_mtime, task.file_mtime))
 
+                self._processed_count += 1
                 self._log(LogLevel.SUCCESS, f"[完成] {task.remote_full_path} -> {task.local_full_path}")
+
+                # 主動連線換氣 (Proactive Session Refresh，避開防火牆 10~15 分鐘連線壽命限制)
+                if self._session_refresh_interval > 0 and self._processed_count % self._session_refresh_interval == 0:
+                    try:
+                        self._log(LogLevel.INFO, f"已連續傳輸 {self._processed_count} 個檔案，執行主動連線換氣 (Session Refresh)...")
+                        self._sftp.reconnect()
+                    except Exception as ref_err:
+                        self._log(LogLevel.WARNING, f"主動換氣重連警示: {ref_err}")
+
+                # 防封鎖微延遲 (Gentle Pacing Delay，避免被伺服器誤判為 DoS 洪水攻擊)
+                if self._request_delay_ms > 0:
+                    delay_sec = self._request_delay_ms / 1000.0
+                    step = 0.05
+                    waited = 0.0
+                    while waited < delay_sec:
+                        self._check_cancel()
+                        time.sleep(min(step, delay_sec - waited))
+                        waited += step
+
                 return self._make_record(task, TransferStatus.SUCCESS, "下載成功")
 
             except TaskCancelledError:
@@ -116,10 +147,11 @@ class DownloadManager:
             except (socket.timeout, paramiko.SSHException, EOFError, OSError) as e:
                 self._cleanup_temp(temp_path)
                 if attempt < self.MAX_RETRY:
-                    wait_sec = 2 ** (attempt - 1)
+                    # 溫和退避：3秒, 6秒, 12秒，給伺服器足夠時間釋放舊 Session
+                    wait_sec = 3 * (2 ** (attempt - 1))
                     self._log(
                         LogLevel.WARNING,
-                        f"下載中斷 ({task.filename}): {e}，{wait_sec} 秒後重連並重試 ({attempt}/{self.MAX_RETRY})..."
+                        f"下載中斷 ({task.filename}): {e}，冷卻等待 {wait_sec} 秒後重連並重試 ({attempt}/{self.MAX_RETRY})..."
                     )
                     time.sleep(wait_sec)
                     try:

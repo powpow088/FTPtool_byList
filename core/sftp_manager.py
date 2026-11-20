@@ -8,7 +8,7 @@ from models.data_models import SFTPConfig
 class SFTPManager:
     """封裝 Paramiko SSH/SFTP 連線、KeepAlive 心跳與安全重連機制"""
 
-    SOCKET_TIMEOUT = 15.0
+    SOCKET_TIMEOUT = 30.0
     KEEPALIVE_INTERVAL = 30
 
     def __init__(self, config: SFTPConfig) -> None:
@@ -68,6 +68,28 @@ class SFTPManager:
         """安全斷線並重建連線"""
         self.close()
         self.connect()
+
+    def is_active(self) -> bool:
+        """即時檢測 SSH Transport 是否存活且 SFTP Channel 未關閉"""
+        if not self._ssh:
+            return False
+        try:
+            transport = self._ssh.get_transport()
+            if not transport or not transport.is_active():
+                return False
+            if not self._sftp:
+                return False
+            channel = self._sftp.get_channel()
+            if not channel or channel.closed:
+                return False
+            return True
+        except Exception:
+            return False
+
+    def ensure_connected(self) -> None:
+        """若連線已失效，自動在背景重建連線"""
+        if not self.is_active():
+            self.reconnect()
 
     def listdir_attr(self, remote_path: str) -> List[paramiko.SFTPAttributes]:
         """取得遠端目錄內容屬性清單"""

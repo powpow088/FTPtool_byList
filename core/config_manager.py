@@ -52,7 +52,9 @@ class ConfigManager:
                 global_pattern=str(ss.get("global_pattern", "")).strip(),
                 conflict_strategy=strategy,
                 local_save_path=str(ss.get("local_save_path", "")).strip(),
-                match_mode=match_mode
+                match_mode=match_mode,
+                request_delay_ms=int(ss.get("request_delay_ms", 50)),
+                session_refresh_interval=int(ss.get("session_refresh_interval", 150))
             )
 
             rules = []
@@ -99,7 +101,9 @@ class ConfigManager:
                 "global_pattern": search_cfg.global_pattern.strip(),
                 "conflict_strategy": search_cfg.conflict_strategy.value,
                 "local_save_path": search_cfg.local_save_path.strip(),
-                "match_mode": search_cfg.match_mode.value
+                "match_mode": search_cfg.match_mode.value,
+                "request_delay_ms": search_cfg.request_delay_ms,
+                "session_refresh_interval": search_cfg.session_refresh_interval
             },
             "rules": [
                 {

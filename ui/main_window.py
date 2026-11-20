@@ -150,17 +150,18 @@ class MainWindow(ctk.CTk):
         # ---------------- 3. 下載與檔案設定區 ----------------
         cfg_frame = ctk.CTkFrame(self)
         cfg_frame.grid(row=2, column=0, sticky="ew", padx=12, pady=5)
-        cfg_frame.grid_columnconfigure(1, weight=1)
+        cfg_frame.grid_columnconfigure(1, weight=2)
         cfg_frame.grid_columnconfigure(3, weight=1)
+        cfg_frame.grid_columnconfigure(5, weight=1)
 
         ctk.CTkLabel(cfg_frame, text="3. 下載與檔案設定", font=("Microsoft JhengHei UI", 13, "bold")).grid(
-            row=0, column=0, columnspan=5, sticky="w", padx=10, pady=(5, 3)
+            row=0, column=0, columnspan=6, sticky="w", padx=10, pady=(5, 3)
         )
 
         ctk.CTkLabel(cfg_frame, text="目標檔案過濾:").grid(row=1, column=0, sticky="e", padx=5, pady=4)
         self.ed_global_pat = ctk.CTkEntry(
             cfg_frame,
-            placeholder_text="例: *RAW*; *RAW*-*.csv (在最後一層目錄搜尋，留空代表全選)"
+            placeholder_text="例: *RAW*; *.csv (在最後一層目錄搜尋，留空代表全選)"
         )
         self.ed_global_pat.grid(row=1, column=1, sticky="ew", padx=5, pady=4)
 
@@ -171,12 +172,21 @@ class MainWindow(ctk.CTk):
         )
         self.cb_strategy.grid(row=1, column=3, sticky="ew", padx=5, pady=4)
 
+        ctk.CTkLabel(cfg_frame, text="傳輸頻率:").grid(row=1, column=4, sticky="e", padx=5, pady=4)
+        self.cb_delay = ctk.CTkOptionMenu(
+            cfg_frame,
+            values=["穩定推薦 (50ms)", "溫和防封 (150ms)", "極速 (0ms)"],
+            width=130
+        )
+        self.cb_delay.set("穩定推薦 (50ms)")
+        self.cb_delay.grid(row=1, column=5, sticky="ew", padx=5, pady=4)
+
         ctk.CTkLabel(cfg_frame, text="本地儲存路徑:").grid(row=2, column=0, sticky="e", padx=5, pady=4)
         self.ed_local_path = ctk.CTkEntry(cfg_frame)
-        self.ed_local_path.grid(row=2, column=1, columnspan=3, sticky="ew", padx=5, pady=4)
+        self.ed_local_path.grid(row=2, column=1, columnspan=4, sticky="ew", padx=5, pady=4)
 
         self.btn_browse_local = ctk.CTkButton(cfg_frame, text="瀏覽...", width=90, command=self._on_browse_local)
-        self.btn_browse_local.grid(row=2, column=4, padx=5, pady=4)
+        self.btn_browse_local.grid(row=2, column=5, padx=5, pady=4)
 
         # ---------------- 4. 執行狀態與日誌反饋區 ----------------
         mon_frame = ctk.CTkFrame(self)
@@ -420,6 +430,14 @@ class MainWindow(ctk.CTk):
         else:
             match_mode = MatchMode.FUZZY
 
+        delay_text = self.cb_delay.get()
+        if "極速" in delay_text:
+            delay_ms = 0
+        elif "150ms" in delay_text:
+            delay_ms = 150
+        else:
+            delay_ms = 50
+
         sftp_cfg = SFTPConfig(
             host=self.ed_host.get().strip(),
             port=port,
@@ -432,7 +450,9 @@ class MainWindow(ctk.CTk):
             global_pattern=self.ed_global_pat.get().strip(),
             conflict_strategy=strategy,
             local_save_path=self.ed_local_path.get().strip(),
-            match_mode=match_mode
+            match_mode=match_mode,
+            request_delay_ms=delay_ms,
+            session_refresh_interval=150
         )
         rules = self.table_rules.get_all_rules()
         return sftp_cfg, search_cfg, rules
@@ -494,6 +514,7 @@ class MainWindow(ctk.CTk):
         self.btn_clear_table.configure(state="disabled" if running else "normal")
         self.btn_import_file.configure(state="disabled" if running else "normal")
         self.cb_match_mode.configure(state="disabled" if running else "normal")
+        self.cb_delay.configure(state="disabled" if running else "normal")
 
     def _on_clear_table(self) -> None:
         if messagebox.askyesno("確認清空", "確定要清空表格內的所有搜尋規則嗎？"):
@@ -580,6 +601,13 @@ class MainWindow(ctk.CTk):
             self.cb_match_mode.set("完全精準相符 (Exact)")
         else:
             self.cb_match_mode.set("模糊包含 (Contains)")
+
+        if search_cfg.request_delay_ms == 0:
+            self.cb_delay.set("極速 (0ms)")
+        elif search_cfg.request_delay_ms >= 150:
+            self.cb_delay.set("溫和防封 (150ms)")
+        else:
+            self.cb_delay.set("穩定推薦 (50ms)")
 
         self.ed_local_path.insert(0, search_cfg.local_save_path)
         self.table_rules.load_rules(rules)

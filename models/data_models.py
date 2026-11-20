@@ -124,6 +124,8 @@ class SearchSettings:
     conflict_strategy: ConflictStrategy = ConflictStrategy.SIZE_MTIME
     local_save_path: str = ""
     match_mode: MatchMode = MatchMode.FUZZY
+    request_delay_ms: int = 50          # 下載間隔微延遲 (毫秒)，預設 50ms 溫和防封
+    session_refresh_interval: int = 150 # 主動換氣間隔 (每 N 個檔案主動重連一次，避開防火牆限制)
 
 
 @dataclass

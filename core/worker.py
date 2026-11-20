@@ -138,7 +138,9 @@ class DownloadWorker(threading.Thread):
                 strategy=self._search_settings.conflict_strategy,
                 cancel_event=self._cancel_event,
                 log_cb=self._emit_log,
-                file_progress_cb=self._throttled_file_progress
+                file_progress_cb=self._throttled_file_progress,
+                request_delay_ms=self._search_settings.request_delay_ms,
+                session_refresh_interval=self._search_settings.session_refresh_interval
             )
 
             for idx, task in enumerate(tasks, start=1):
