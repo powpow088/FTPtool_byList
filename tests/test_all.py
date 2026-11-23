@@ -18,6 +18,7 @@ def run_all_tests():
         "tests/test_phase9_scan_only.py",
         "tests/test_phase10_connection_guard.py",
         "tests/test_phase11_paired_keywords.py",
+        "tests/test_phase12_detail_aggregation.py",
     ]
 
     print("==================================================")
@@ -39,7 +40,7 @@ def run_all_tests():
 
     print("\n==================================================")
     if all_passed:
-        print("  🎉🎉🎉 全數 10 大單元與整合測試 100% 通過！ 🎉🎉🎉")
+        print("  🎉🎉🎉 全數 11 大單元與整合測試 100% 通過！ 🎉🎉🎉")
     else:
         print("  ❌ 存在未通過之測試項目，請檢修！")
     print("==================================================")
