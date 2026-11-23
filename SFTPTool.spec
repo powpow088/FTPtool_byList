@@ -9,9 +9,18 @@ hiddenimports = [
     'bcrypt',
     'nacl',
     'openpyxl',
+    'xlsxwriter',
+    'python_calamine',
+    'sqlite3',
     'darkdetect',
     'customtkinter'
 ]
+
+# 收集 python_calamine 的編譯二進位模組
+tmp_cal = collect_all('python_calamine')
+datas += tmp_cal[0]
+binaries += tmp_cal[1]
+hiddenimports += tmp_cal[2]
 
 # 收集 customtkinter 的主題 JSON 與字型資產
 tmp_ctk = collect_all('customtkinter')

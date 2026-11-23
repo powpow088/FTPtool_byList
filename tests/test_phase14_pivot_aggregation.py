@@ -198,7 +198,7 @@ def test_aggregate_pivot_workflow():
 
         # 4. 檢驗表頭色彩
         blank_header_cell = ws_s.cell(row=1, column=blank_col_idx + 1)
-        assert blank_header_cell.fill.start_color.rgb == "009C4A00" or blank_header_cell.fill.start_color.rgb == "9C4A00"
+        assert blank_header_cell.fill.start_color.rgb in ("009C4A00", "9C4A00", "FF9C4A00") or str(blank_header_cell.fill.start_color.rgb).endswith("9C4A00")
 
         # 5. 檢驗 AutoFilter 存在
         assert ws_s.auto_filter.ref is not None

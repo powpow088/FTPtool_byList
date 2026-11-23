@@ -1,41 +1,47 @@
-import os
+# core/detail_aggregator.py
 import csv
-import datetime
+import os
+import tempfile
 from pathlib import Path
-from typing import List, Tuple, Optional, Callable, Dict, Any
-import openpyxl
-from openpyxl.styles import Font
-from openpyxl.utils import get_column_letter
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+import xlsxwriter
+
+from core.excel_utils import safe_atomic_move, sanitize_xml_text
+from core.sidecar_cache import SidecarCacheWriter
 
 
 class DetailAggregator:
     """
-    負責穿透已下載之晶片/晶圓測試檔案 (CSV/TSV)，
-    依據原 VBA 巨集規範萃取 11 大欄位，並整合下載清單產出為單一雙工作表 Excel 活頁簿 (.xlsx)。
+    彙整資料 1（極速雙軌串流版）：
+    - 管道 A：xlsxwriter(constant_memory=True) 寫入 %TEMP% 暫存檔，結束後安全原子搬移
+    - 管道 B：同步每 50,000 列寫入 SQLite 旁路快取 (.cache.db)，供彙整 2 秒級讀取
+    - 完美相容既有介面簽名：aggregate_to_excel(...) -> (succeeded, failed, total_written)
     """
 
-    MAX_ROWS_PER_SHEET = 1_000_000 # 單一工作表上限，超過自動分頁至 工作表2_2, 工作表2_3
     OUT_SHEET_NAME = "工作表2"
+    MAX_ROWS_PER_SHEET = 1_000_000  # 含表頭列
+    CACHE_BATCH_SIZE = 50_000
 
-    COLUMN_WIDTHS: Dict[str, int] = {
-        "A": 24, # 第 1 層目錄
-        "B": 13, # PN
-        "C": 22, # 第 2 層目錄
-        "D": 22, # LOT
-        "E": 12, # RECIPE
-        "F": 62, # 檔案名稱
-        "G": 21, # 2D ID (MPID)
-        "H": 13, # X (MP_X)
-        "I": 13, # Y (MP_Y)
-        "J": 28, # MPID_X_Y
-        "K": 13, # Unit BIN#
-    }
-
-    HEADERS_DETAIL: List[str] = [
-        "第 1 層目錄", "PN", "第 2 層目錄", "LOT", "RECIPE",
-        "檔案名稱", "2D ID (MPID)", "X (MP_X)", "Y (MP_Y)",
-        "MPID_X_Y", "Unit BIN#"
+    DETAIL_HEADERS: List[str] = [
+        "第 1 層目錄",
+        "PN",
+        "第 2 層目錄",
+        "LOT",
+        "RECIPE",
+        "檔案名稱",
+        "2D ID (MPID)",
+        "X (MP_X)",
+        "Y (MP_Y)",
+        "MPID_X_Y",
+        "Unit BIN#",
     ]
+
+    # A~J 欄寬度 (索引 0~9 鎖定純文字 '@')，K 欄 (索引 10) 寬度 13 保留 General/數值格式
+    COLUMN_WIDTHS: Dict[str, int] = {
+        "A": 24, "B": 13, "C": 22, "D": 22, "E": 12,
+        "F": 62, "G": 21, "H": 13, "I": 13, "J": 28, "K": 13
+    }
+    DETAIL_COL_WIDTHS_LIST: Tuple[int, ...] = (24, 13, 22, 22, 12, 62, 21, 13, 13, 28, 13)
 
     @staticmethod
     def parse_recipe(level1_dir: str, pn: str = "") -> str:
@@ -44,11 +50,11 @@ class DetailAggregator:
         1. 優先方案: 若有提供 pn 且存在於 level1_dir:
            - 找到 pn 在 level1_dir 中的位置
            - 從 pn 之後尋找第一個連字號 '-'
-           - 若找到，則取該連字號之後的全部文字作為 RECIPE (例如 '214-3273242A-SUB-C' 配 '3273242' -> 'SUB-C')
+           - 取該連字號之後的全部文字作為 RECIPE (例如 '214-3273242A-SUB-C' 配 '3273242' -> 'SUB-C')
            - 亦涵蓋無廠區前綴結構 (例如 '3273173A-DUMMY' 配 '3273173' -> 'DUMMY')
         2. 退避方案: 若無 pn 或 pn 未在目錄名中命中:
-           - 若有 >= 2 個連字號: 取第 2 個連字號後的全部文字 (例如 'AAA-BBB-SUB-C' -> 'SUB-C')
-           - 若只有 1 個連字號: 取第 1 個連字號後的全部文字 (例如 '3273173A-DUMMY' -> 'DUMMY')
+           - 若有 >= 2 個連字號: 取第 2 個連字號後的全部文字
+           - 若只有 1 個連字號: 取第 1 個連字號後的全部文字
            - 若無連字號: 回傳空字串
         """
         s = level1_dir.strip()
@@ -73,9 +79,7 @@ class DetailAggregator:
 
     @staticmethod
     def read_local_text(file_path: str) -> str:
-        """
-        支援 UTF-8 BOM、標準 UTF-8 及 Windows CP950/ANSI 編碼自動辨識讀取。
-        """
+        """支援 UTF-8 BOM、標準 UTF-8 及 Windows CP950/ANSI 編碼自動辨識讀取"""
         with open(file_path, "rb") as f:
             raw_bytes = f.read()
 
@@ -112,10 +116,9 @@ class DetailAggregator:
     ) -> Tuple[List[List[Any]], Optional[str]]:
         """
         解析單一晶片測試檔案：
-        - 搜尋前 10 列中包含 2D ID, X, Y, UNIT BIN# 之標題列（大小寫不敏感，自動相容逗號或 Tab）
-        - 略過第一欄為 Hard Limit 之列
-        - 組合 MPID_X_Y
-        回傳 (明細列清單, 錯誤訊息/略過原因)
+        - 搜尋前 10 列中包含 2D ID, X, Y, UNIT BIN# 之標題列（大小寫不敏感，相容逗號與 Tab）
+        - 第一欄為 Hard Limit 之列略過不計
+        - RECIPE 依 PN 錨點解析
         """
         if not os.path.exists(file_path):
             return [], f"實體檔案不存在: {file_path}"
@@ -140,7 +143,6 @@ class DetailAggregator:
             line_upper = line.upper()
             if "2D ID" in line_upper:
                 sep = "\t" if "\t" in line else ","
-                # 簡單依分隔符號分割 (相容引號)
                 reader = csv.reader([line], delimiter=sep)
                 fields = next(reader, [])
                 t_id, t_x, t_y, t_bin = -1, -1, -1, -1
@@ -180,21 +182,16 @@ class DetailAggregator:
             if first_field.lower() == "hard limit":
                 continue
 
-            if len(cols) > id_col:
+            if len(cols) > max_col_needed:
                 unit_id = cols[id_col].strip()
-                if unit_id:
-                    if len(cols) <= max_col_needed:
-                        # 欄位不足跳過該列
-                        continue
+                x_val = cols[x_col].strip()
+                y_val = cols[y_col].strip()
+                bin_val = cols[bin_col].strip()
 
-                    x_val = cols[x_col].strip()
-                    y_val = cols[y_col].strip()
-                    bin_val = cols[bin_col].strip()
-                    mpid_x_y = f"{unit_id}_{x_val}_{y_val}"
-
-                    # Unit BIN# 數值/文字轉換
+                if unit_id or bin_val:
+                    mpid_x_y = f"{unit_id}_{x_val}_{y_val}" if (unit_id or x_val or y_val) else ""
                     final_bin: Any = bin_val
-                    if bin_val.isdigit() and len(bin_val) <= 9:
+                    if bin_val.isdigit():
                         try:
                             final_bin = int(bin_val)
                         except ValueError:
@@ -218,6 +215,44 @@ class DetailAggregator:
         return rows, None
 
     @classmethod
+    def _setup_detail_sheet(
+        cls,
+        ws: xlsxwriter.worksheet.Worksheet,
+        fmt_text: xlsxwriter.format.Format,
+        fmt_header_text: xlsxwriter.format.Format,
+        fmt_header_general: xlsxwriter.format.Format,
+    ) -> None:
+        """在寫入資料列前鎖定欄寬、純文字格式 (@) 與表頭列（Row 0）"""
+        for col_idx, width in enumerate(cls.DETAIL_COL_WIDTHS_LIST):
+            if col_idx <= 9:  # A ~ J 欄：純文字格式 '@'
+                ws.set_column(col_idx, col_idx, width, fmt_text)
+            else:  # K 欄 (Unit BIN#)：保留 General / 數值格式
+                ws.set_column(col_idx, col_idx, width)
+
+        for col_idx, header_text in enumerate(cls.DETAIL_HEADERS):
+            hdr_fmt = fmt_header_text if col_idx <= 9 else fmt_header_general
+            ws.write_string(0, col_idx, header_text, hdr_fmt)
+
+    @staticmethod
+    def _write_bin_cell(
+        ws: xlsxwriter.worksheet.Worksheet, row_idx: int, col_idx: int, bin_val: Any
+    ) -> None:
+        """K 欄 (Unit BIN#) 寫入：數值以 write_number 輸出，字串以 write_string 輸出"""
+        if bin_val is None or bin_val == "":
+            return
+        if isinstance(bin_val, int):
+            ws.write_number(row_idx, col_idx, bin_val)
+        elif isinstance(bin_val, float):
+            if bin_val.is_integer():
+                ws.write_number(row_idx, col_idx, int(bin_val))
+            else:
+                ws.write_number(row_idx, col_idx, bin_val)
+        elif isinstance(bin_val, str) and bin_val.isdigit() and (len(bin_val) == 1 or not bin_val.startswith("0")):
+            ws.write_number(row_idx, col_idx, int(bin_val))
+        else:
+            ws.write_string(row_idx, col_idx, str(bin_val))
+
+    @classmethod
     def aggregate_to_excel(
         cls,
         manifest_csv_path: str,
@@ -226,9 +261,9 @@ class DetailAggregator:
         progress_cb: Optional[Callable[[int, int, int, str], None]] = None
     ) -> Tuple[int, int, int]:
         """
-        讀取下載清單 CSV，解析其所有「下載成功」的檔案，產出雙工作表 Excel 活頁簿：
-        - Sheet 1: 下載清單
-        - Sheet 2: 工作表2 (晶片明細，達 100 萬列自動切頁 工作表2_2...)
+        讀取下載清單 CSV，解析其所有「下載成功」的檔案，透過雙軌串流產出：
+        - 管道 A：xlsxwriter(constant_memory=True) 輸出雙工作表 Excel（Sheet 1 下載清單、Sheet 2 工作表2...）
+        - 管道 B：同步產生 SQLite 旁路快取 (.cache.db)，供彙整 2 秒級載入
         回傳: (成功解析檔案數, 略過/失敗檔案數, 總寫入明細筆數)
         """
         if not os.path.exists(manifest_csv_path):
@@ -244,7 +279,6 @@ class DetailAggregator:
         manifest_headers = reader[0]
         manifest_rows = reader[1:]
 
-        # 動態定位下載清單中的必要欄位
         col_map = {name.strip(): idx for idx, name in enumerate(manifest_headers)}
         path_col = col_map.get("本地完整路徑")
         status_col = col_map.get("處理狀態")
@@ -256,7 +290,6 @@ class DetailAggregator:
         if path_col is None or status_col is None:
             raise ValueError("下載清單缺少必要欄位：'本地完整路徑' 或 '處理狀態'")
 
-        # 預先篩選所有「下載成功」之實體檔案
         valid_items = []
         for r_idx, r in enumerate(manifest_rows, start=2):
             local_path = r[path_col].strip() if path_col < len(r) else ""
@@ -265,91 +298,127 @@ class DetailAggregator:
                 valid_items.append((r_idx, r, local_path))
 
         total_files = len(valid_items)
+        tmp_dir = tempfile.gettempdir()
+        fd, temp_xlsx_path = tempfile.mkstemp(prefix="wafer_detail_", suffix=".xlsx", dir=tmp_dir)
+        os.close(fd)
 
-        # 2. 建立 OpenPyXL 活頁簿
-        wb = openpyxl.Workbook()
+        cache_writer = SidecarCacheWriter(output_xlsx_path)
+        cache_buffer: List[Tuple[Any, ...]] = []
 
-        # 工作表 1: 下載清單
-        ws_list = wb.active
-        ws_list.title = "下載清單"
-        ws_list.append(manifest_headers)
-        for c in ws_list[1]:
-            c.font = Font(bold=True)
+        wb = xlsxwriter.Workbook(
+            temp_xlsx_path,
+            {"constant_memory": True, "tmpdir": tmp_dir},
+        )
+        wb_closed = False
 
-        for r in manifest_rows:
-            ws_list.append(r)
+        try:
+            fmt_list_header = wb.add_format({"bold": True})
+            fmt_text = wb.add_format({"num_format": "@"})
+            fmt_header_text = wb.add_format({"bold": True, "num_format": "@"})
+            fmt_header_general = wb.add_format({"bold": True})
 
-        # 自動調整 Sheet 1 欄寬
-        for col_idx in range(1, len(manifest_headers) + 1):
-            col_letter = get_column_letter(col_idx)
-            ws_list.column_dimensions[col_letter].width = 18
+            # Sheet 1: 下載清單（表頭加粗、欄寬 18）
+            ws_list = wb.add_worksheet("下載清單")
+            num_list_cols = max(len(manifest_headers), 1)
+            ws_list.set_column(0, num_list_cols - 1, 18)
 
-        # 工作表 2: 明細 (支援 100 萬列自動切頁)
-        page_no = 1
-        ws_detail = wb.create_sheet(title=cls.OUT_SHEET_NAME)
-        cls._setup_detail_sheet(ws_detail)
+            for c_idx, h_val in enumerate(manifest_headers):
+                ws_list.write_string(0, c_idx, sanitize_xml_text(h_val), fmt_list_header)
 
-        current_ws = ws_detail
-        row_in_sheet = 1 # 表頭已佔第 1 列
-        total_written = 0
-        succeeded_files = 0
-        failed_files = 0
+            for r_offset, row_vals in enumerate(manifest_rows, start=1):
+                for c_idx, val in enumerate(row_vals):
+                    if val is not None and val != "":
+                        ws_list.write_string(r_offset, c_idx, sanitize_xml_text(val))
 
-        for file_idx, (r_idx, r, local_path) in enumerate(valid_items, start=1):
-            l1 = r[l1_col].strip() if l1_col is not None and l1_col < len(r) else ""
-            pn = r[pn_col].strip() if pn_col is not None and pn_col < len(r) else ""
-            l2 = r[l2_col].strip() if l2_col is not None and l2_col < len(r) else ""
-            lot = r[lot_col].strip() if lot_col is not None and lot_col < len(r) else ""
+            # Sheet 2+: 工作表2 (首頁無後綴，超過 100 萬列切 工作表2_2, 工作表2_3...)
+            page_no = 1
+            current_ws = wb.add_worksheet(cls.OUT_SHEET_NAME)
+            cls._setup_detail_sheet(current_ws, fmt_text, fmt_header_text, fmt_header_general)
 
-            fname = os.path.basename(local_path)
-            rows, err = cls.parse_single_file(local_path, l1, pn, l2, lot)
-            if err:
-                failed_files += 1
-                if log_cb:
-                    log_cb(f"[略過] [{file_idx}/{total_files}] 第 {r_idx} 列 {fname}: {err}")
+            row_in_sheet = 1
+            total_written = 0
+            succeeded_files = 0
+            failed_files = 0
+
+            for file_idx, (r_idx, r, local_path) in enumerate(valid_items, start=1):
+                l1 = r[l1_col].strip() if l1_col is not None and l1_col < len(r) else ""
+                pn = r[pn_col].strip() if pn_col is not None and pn_col < len(r) else ""
+                l2 = r[l2_col].strip() if l2_col is not None and l2_col < len(r) else ""
+                lot = r[lot_col].strip() if lot_col is not None and lot_col < len(r) else ""
+
+                fname = os.path.basename(local_path)
+                parsed_rows, err = cls.parse_single_file(local_path, l1, pn, l2, lot)
+                if err:
+                    failed_files += 1
+                    if log_cb:
+                        log_cb(f"[略過] [{file_idx}/{total_files}] 第 {r_idx} 列 {fname}: {err}")
+                    if progress_cb:
+                        progress_cb(file_idx, total_files, total_written, fname)
+                    continue
+
+                succeeded_files += 1
+
+                for row_data in parsed_rows:
+                    if row_in_sheet >= cls.MAX_ROWS_PER_SHEET:
+                        page_no += 1
+                        sheet_name = f"{cls.OUT_SHEET_NAME}_{page_no}"
+                        current_ws = wb.add_worksheet(sheet_name)
+                        cls._setup_detail_sheet(
+                            current_ws, fmt_text, fmt_header_text, fmt_header_general
+                        )
+                        row_in_sheet = 1
+
+                    # A ~ J 欄寫入純文字
+                    for c_idx in range(10):
+                        v_str = sanitize_xml_text(row_data[c_idx])
+                        if v_str:
+                            current_ws.write_string(row_in_sheet, c_idx, v_str)
+
+                    # K 欄 (Unit BIN#)
+                    cls._write_bin_cell(current_ws, row_in_sheet, 10, row_data[10])
+
+                    row_in_sheet += 1
+                    total_written += 1
+
+                    # 旁路快取累積寫入
+                    cache_buffer.append(tuple(sanitize_xml_text(col) for col in row_data))
+                    if len(cache_buffer) >= cls.CACHE_BATCH_SIZE:
+                        cache_writer.write_batch(cache_buffer)
+                        cache_buffer.clear()
+
                 if progress_cb:
                     progress_cb(file_idx, total_files, total_written, fname)
-                continue
 
-            succeeded_files += 1
+                if log_cb and (file_idx == 1 or file_idx % 5 == 0 or file_idx == total_files):
+                    pct = (file_idx / total_files) * 100 if total_files > 0 else 100.0
+                    log_cb(f"[{file_idx}/{total_files}] ({pct:.1f}%) 正在解析: {fname} (累計寫入 {total_written:,} 筆晶片)...")
 
-            # 寫入工作表 (直接 append，並以 O(1) 座標快速綁定純文字 @ 格式，兼具極致效能與純文字規格)
-            for row_data in rows:
-                if row_in_sheet >= cls.MAX_ROWS_PER_SHEET:
-                    page_no += 1
-                    sheet_name = f"{cls.OUT_SHEET_NAME}_{page_no}"
-                    current_ws = wb.create_sheet(title=sheet_name)
-                    cls._setup_detail_sheet(current_ws)
-                    row_in_sheet = 1
+            # 沖刷剩餘快取
+            if cache_buffer:
+                cache_writer.write_batch(cache_buffer)
+                cache_buffer.clear()
 
-                current_ws.append(row_data)
-                row_in_sheet += 1
-                total_written += 1
-                for c_idx in range(1, len(row_data)): # 前 10 欄 (A~J) 設為純文字 @
-                    current_ws.cell(row=row_in_sheet, column=c_idx).number_format = "@"
+            if log_cb:
+                log_cb(f"所有檔案解析完成 (共 {succeeded_files} 個成功檔，寫入 {total_written:,} 筆晶片)，正在封裝 Excel 活頁簿至硬碟 (請稍候)...")
 
-            if progress_cb:
-                progress_cb(file_idx, total_files, total_written, fname)
+            wb.close()
+            wb_closed = True
 
-            # 每 5 個檔案或首尾檔案輸出即時日誌
-            if log_cb and (file_idx == 1 or file_idx % 5 == 0 or file_idx == total_files):
-                pct = (file_idx / total_files) * 100 if total_files > 0 else 100.0
-                log_cb(f"[{file_idx}/{total_files}] ({pct:.1f}%) 正在解析: {fname} (累計寫入 {total_written:,} 筆晶片)...")
+            safe_atomic_move(temp_xlsx_path, output_xlsx_path)
+            cache_writer.finalize(output_xlsx_path)
 
-        # 3. 儲存檔案
-        if log_cb:
-            log_cb(f"所有檔案解析完成 (共 {succeeded_files} 個成功檔，寫入 {total_written:,} 筆晶片)，正在儲存 Excel 活頁簿至硬碟 (請稍候)...")
-        os.makedirs(os.path.dirname(os.path.abspath(output_xlsx_path)), exist_ok=True)
-        wb.save(output_xlsx_path)
+            return succeeded_files, failed_files, total_written
 
-        return succeeded_files, failed_files, total_written
-
-    @classmethod
-    def _setup_detail_sheet(cls, ws) -> None:
-        """設定明細工作表的表頭、粗體與指定欄寬"""
-        ws.append(cls.HEADERS_DETAIL)
-        for cell in ws[1]:
-            cell.font = Font(bold=True)
-
-        for col_letter, width in cls.COLUMN_WIDTHS.items():
-            ws.column_dimensions[col_letter].width = width
+        except Exception:
+            if not wb_closed:
+                try:
+                    wb.close()
+                except Exception:
+                    pass
+            if os.path.exists(temp_xlsx_path):
+                try:
+                    os.remove(temp_xlsx_path)
+                except OSError:
+                    pass
+            cache_writer.abort()
+            raise

@@ -458,3 +458,53 @@
   - [x] 20.4.2 執行全套回歸測試 `python tests/test_all.py` 確保 13 大測試模組 100% 通過
   - [x] 20.4.3 重新編譯 `build_exe.py` 與 `build_portable.py` 產出最新安裝包
   - [x] 20.4.4 提交代碼並推送到 GitHub 遠端儲存庫
+
+---
+
+## 微階段 21：巨量晶片資料極速引擎實作 (xlsxwriter 串流寫入 + SQLite 旁路快取 + python-calamine 退避)
+- [x] 21.1 前置防護模組與 SQLite 旁路快取實作 (`core/excel_utils.py` & `core/sidecar_cache.py`)
+  - [x] 21.1.1 實作 `core/excel_utils.py` 之 `sanitize_xml_text(val)`：正則剝除 XML 1.0 禁止之 `0x00-0x08`, `0x0B-0x0C`, `0x0E-0x1F`, `0x7F-0x84`, `0x86-0x9F` 控制字元，保留 `\t`, `\n`, `\r`
+  - [x] 21.1.2 實作 `core/excel_utils.py` 之 `safe_atomic_move(src, dst, max_retries=8)`：以 `shutil.move` / `os.replace` 搬移，遇 `PermissionError` (WinError 32) 進行指數退避等待 (0.1s, 0.2s, 0.4s...)
+  - [x] 21.1.3 實作 `core/sidecar_cache.py` 之 `SidecarCacheWriter`：
+    - 建置 `meta` 表 (`id`, `file_size`, `mtime_ns`, `row_count`, `created_at`) 與 `wafer_details` 表 (11 大明細欄位)
+    - 配置極速 PRAGMAs (`WAL`, `synchronous=OFF`, `cache_size=100000`, `temp_store=MEMORY`, `locking_mode=EXCLUSIVE`)
+    - 支援每批 50,000 列 `executemany` 批次寫入
+    - 寫入完成執行 `finalize()` 寫入主檔 `file_size` 與 `mtime_ns` 指紋，合併 WAL (`wal_checkpoint(TRUNCATE)`)
+    - 異常處理 `abort()`：自動 `rollback`、關閉連線並刪除 `.cache.db` 及附屬 `-wal`/`-shm` 檔案
+  - [x] 21.1.4 實作 `core/sidecar_cache.py` 之 `SidecarCacheReader`：
+    - 實作 `is_valid(xlsx_path)`：唯讀連線校驗 `file_size` 與 `mtime_ns` 指紋精確一致性
+    - 實作 `get_distinct_recipes(cache_path)`：0.05 秒內透過 SQL 撈取所有非空 RECIPE 排序清單
+    - 實作 `has_blank_recipe(cache_path)`：快速檢查是否有空白 RECIPE (決定 ERROR_blank 欄位)
+    - 實作 `stream_records(cache_path, batch_size=50000)`：批次串流讀取 11 欄明細
+- [x] 21.2 彙整 1 引擎雙軌串流輸出全面升級 (`core/detail_aggregator.py`)
+  - [x] 21.2.1 完整保留 `parse_recipe(level1, pn)` 之 PN 錨點解析演算法與退避機制
+  - [x] 21.2.2 完整保留 `parse_single_file` 之前 10 列表頭自動定位與機台 `Hard Limit` 列排除機制
+  - [x] 21.2.3 實作雙軌串流寫入器：
+    - 管道 A：透過 `xlsxwriter.Workbook(temp_path, {'constant_memory': True, 'tmpdir': tmp_dir})` 輸出 Excel
+      - Sheet 1 (`下載清單`)：表頭加粗、全欄寬 18
+      - Sheet 2 (`工作表2`)：首頁無 `_01` 後綴，滿 1,000,000 列自動切頁 `工作表2_2`、`工作表2_3`...
+      - A~J 欄寫入前一次性以 `ws.set_column` 綁定純文字格式 `@` 與指定寬度 (A:24, B:13, C:22, D:22, E:12, F:62, G:21, H:13, I:13, J:28)
+      - K 欄 (`Unit BIN#`) 寬度 13 保留數值 / General 格式 (純整數以 `write_number` 寫入，其餘以 `write_string` 寫入)
+    - 管道 B：同步累積 50,000 列批次推入 `SidecarCacheWriter`
+  - [x] 21.2.4 寫入完成於本機 `%TEMP%` 執行 `wb.close()`，透過 `safe_atomic_move` 安全搬移至目標路徑，並完成快取 `finalize()`
+  - [x] 21.2.5 保持公開介面簽名 `aggregate_to_excel(manifest_csv_path, output_xlsx_path, log_cb, progress_cb)` 與回傳元組 `(succeeded, failed, total_written)` 100% 相容
+- [x] 21.3 彙整 2 引擎智慧路由與正統兩階段樞紐轉置 (`core/pivot_aggregator.py`)
+  - [x] 21.3.1 實作 `sanitize_bin_value(val)` 與 `sanitize_text_cell(val)`：標準化清洗 `int`, `float(1.0)`, `str("01")`, `None`
+  - [x] 21.3.2 保持 `pad_coordinates` (尾端純數字補零)、`extract_lot` (優先 D 欄退避 C 欄去尾碼)、`extract_pn` (優先 B 欄退避 A 欄)、`calc_bin_rank` (32>1>others)、`display_rank`
+  - [x] 21.3.3 實作智慧路由載入 `stream_source_records`：優先讀取指紋相符之 `.cache.db`，無快取時自動切換 `python-calamine` 退避解析
+  - [x] 21.3.4 實作正統雙層分群資料結構：
+    - `details` 依 `(pn, full_lot)` 分群 $\rightarrow$ 輸出 `中繼明細`
+    - `summaries` 依 `(pn, clean_lot)` 母批號分群 $\rightarrow$ **同一母批號下所有晶圓合併在同一列**，B 欄 `第 2 層目錄(LOT)` 以純逗號串接所有 `full_lot`，跨晶圓取最高權重評級
+    - 熱迴圈使用 `sys.intern` 進行字串駐留，暫停 Cyclic GC 防止記憶體累積
+  - [x] 21.3.5 實作 `PaginatedStreamSheetWriter` 串流分頁寫出：
+    - 滿 1,000,000 列自動切頁（`中繼明細_01`、`RECIPE彙整_01`...）
+    - 實作 LOT 群組完整性保護（若整包 LOT 能塞入新分頁，不在舊分頁尾端切碎）
+    - 表頭設定深藍底白字（RGB: 31, 78, 120），`ERROR_blank` 設定深橘底白字（RGB: 156, 74, 0）
+    - 預設聚焦於 `RECIPE彙整_01` 活頁 (`ws.activate()`)
+  - [x] 21.3.6 保持公開介面簽名 `aggregate_pivot(...) -> (total_source_rows, detail_written, summary_written, output_xlsx_path)` 100% 相容
+- [x] 21.4 自動化單元測試、全套回歸與封裝發布
+  - [x] 21.4.1 建立 `tests/test_phase21_ultra_speed.py`，撰寫 6 大核心測試案例（快取生命週期、calamine 退避清洗、XML 非法字元剝除、彙整 1 雙軌輸出與命名、母批號跨晶圓合併與樣式、防毒鎖檔重試）
+  - [x] 21.4.2 執行 `python tests/test_phase21_ultra_speed.py` 驗證 100% 通過
+  - [x] 21.4.3 執行全套回歸測試 `python tests/test_all.py` 確保 14 大測試模組 100% 通過
+  - [x] 21.4.4 重新執行 `build_exe.py` 與 `build_portable.py` 編譯最新單檔 EXE 與便攜 ZIP 包
+  - [x] 21.4.5 提交代碼至 Git 並推送到 GitHub 遠端儲存庫

@@ -198,9 +198,9 @@ def test_aggregate_to_excel_and_sheets():
     assert ws2.cell(row=2, column=11).value == 1
 
     # 驗證欄寬設定存在
-    assert ws2.column_dimensions["A"].width == 24
-    assert ws2.column_dimensions["B"].width == 13
-    assert ws2.column_dimensions["F"].width == 62
+    assert int(ws2.column_dimensions["A"].width) == 24
+    assert int(ws2.column_dimensions["B"].width) == 13
+    assert int(ws2.column_dimensions["F"].width) == 62
 
     # 驗證儲存格格式純文字 @
     assert ws2.cell(row=2, column=1).number_format == "@"
