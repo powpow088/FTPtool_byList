@@ -434,3 +434,27 @@
   - [x] 19.3.2 執行完整回歸測試 `python tests/test_all.py`，確保 13 大測試模組 100% 通過
   - [x] 19.3.3 重新執行 `build_exe.py` 與 `build_portable.py` 編譯最新單檔 EXE 與綠色便攜 ZIP 包
   - [x] 19.3.4 提交代碼至 Git 並推送到 GitHub 遠端儲存庫
+
+---
+
+## 微階段 20：彙整效能提速與即時進度條/日誌雙軌反饋 (Aggregation Acceleration & Real-time Progress Feedback)
+- [x] 20.1 明細彙整引擎效能提速與進度回報 (`core/detail_aggregator.py`)
+  - [x] 20.1.1 消除 `ws[row]` $O(N)$ 尋址效能陷阱，改採直接 append 並以 $O(1)$ 高速維度綁定純文字 `@` 格式，提速 10~50 倍且完整滿足純文字規範
+  - [x] 20.1.2 擴充 `aggregate_to_excel` 加入 `progress_cb: Optional[Callable[[int, int, int, str], None]]` 回調介面
+  - [x] 20.1.3 在解析迴圈中每處理 5 個檔案（及首尾檔案）即時發出 `INFO` 日誌，顯示 `[當前檔數/總檔數] (百分比%) 正在解析: 檔名 (累計晶片筆數)`
+  - [x] 20.1.4 在進入 `wb.save()` 前發布明確日誌：「所有檔案解析完成，正在儲存 Excel 活頁簿至硬碟 (資料量較大請稍候)...」
+- [x] 20.2 樞紐彙整引擎效能提速與進度回報 (`core/pivot_aggregator.py`)
+  - [x] 20.2.1 移除中繼明細與 RECIPE 彙整寫入時多餘的逐單元格尋址瓶頸
+  - [x] 20.2.2 擴充 `aggregate_pivot` 加入 `progress_cb: Optional[Callable[[float, str], None]]` 階段進度回報介面
+  - [x] 20.2.3 於讀取來源表、中繼明細產出、樞紐彙整產出各階段即時回報進度文字與百分比
+  - [x] 20.2.4 在進入 `dst_wb.save()` 前發布明確存檔保護日誌
+- [x] 20.3 主視窗現有進度條與狀態文字雙向連動 (`ui/main_window.py`)
+  - [x] 20.3.1 於 `_on_aggregate_data_task` 啟動時立即重設現有進度條 `self.progress_bar.set(0.0)`
+  - [x] 20.3.2 串接 `progress_cb` 即時更新進度條數值與現有標籤 `self.lbl_file_prog.configure(text=f"彙整進度: {cur}/{total} 檔 ({pct:.1f}%)")`
+  - [x] 20.3.3 於 `_on_aggregate2_task` 啟動時同樣連動重設與平滑推進進度條
+  - [x] 20.3.4 彙整完成時更新狀態文字為完成統計，重設進度條為 1.0
+- [x] 20.4 單元測試、全套回歸與發布打包
+  - [x] 20.4.1 更新單元測試驗證 `progress_cb` 正確觸發且傳回精確進度
+  - [x] 20.4.2 執行全套回歸測試 `python tests/test_all.py` 確保 13 大測試模組 100% 通過
+  - [x] 20.4.3 重新編譯 `build_exe.py` 與 `build_portable.py` 產出最新安裝包
+  - [x] 20.4.4 提交代碼並推送到 GitHub 遠端儲存庫

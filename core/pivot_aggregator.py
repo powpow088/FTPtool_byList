@@ -131,7 +131,8 @@ class PivotAggregator:
         cls,
         source_xlsx_path: str,
         output_xlsx_path: Optional[str] = None,
-        log_cb: Optional[Callable[[str], None]] = None
+        log_cb: Optional[Callable[[str], None]] = None,
+        progress_cb: Optional[Callable[[float, str], None]] = None
     ) -> Tuple[int, int, int, str]:
         """
         核心執行進入點:
@@ -144,6 +145,8 @@ class PivotAggregator:
 
         if log_cb:
             log_cb(f"正在載入來源活頁簿: {os.path.basename(source_xlsx_path)} ...")
+        if progress_cb:
+            progress_cb(0.05, f"載入來源檔案: {os.path.basename(source_xlsx_path)}")
 
         # 1. 載入來源活頁簿，掃描符合標頭的工作表
         src_wb = openpyxl.load_workbook(source_xlsx_path, read_only=True, data_only=True)
@@ -180,6 +183,8 @@ class PivotAggregator:
         for s_idx, (sheet_name, ws) in enumerate(source_sheets, start=1):
             if log_cb:
                 log_cb(f"正在讀取 [{s_idx}/{len(source_sheets)}] {sheet_name} ...")
+            if progress_cb:
+                progress_cb(0.1 + (s_idx / len(source_sheets)) * 0.35, f"讀取來源表: {sheet_name} ({s_idx}/{len(source_sheets)})")
 
             rows_iter = ws.iter_rows(min_row=1, values_only=True)
             headers = next(rows_iter, None)
@@ -355,11 +360,15 @@ class PivotAggregator:
         # 7. 輸出「中繼明細」系列分頁
         if log_cb:
             log_cb("正在產出 [中繼明細] 工作表...")
+        if progress_cb:
+            progress_cb(0.5, "正在產出中繼明細工作表...")
         detail_written = cls._write_detail_sheets(dst_wb, details, recipes_ordered, log_cb)
 
         # 8. 輸出「RECIPE彙整」系列分頁
         if log_cb:
             log_cb("正在產出 [RECIPE彙整] 交叉樞紐表...")
+        if progress_cb:
+            progress_cb(0.75, "正在產出 RECIPE 彙整交叉表...")
         summary_written = cls._write_summary_sheets(dst_wb, summaries, recipes_ordered, log_cb)
 
         # 移除預設的空白 Sheet
@@ -372,10 +381,14 @@ class PivotAggregator:
 
         # 9. 儲存檔案
         if log_cb:
-            log_cb(f"正在儲存活頁簿至硬碟: {os.path.basename(output_xlsx_path)} ...")
+            log_cb(f"所有樞紐運算完成 (中繼明細 {detail_written:,} 列，RECIPE彙整 {summary_written:,} 列)，正在儲存活頁簿至硬碟 (請稍候)...")
+        if progress_cb:
+            progress_cb(0.9, "正在儲存 Excel 活頁簿至硬碟...")
         os.makedirs(os.path.dirname(os.path.abspath(output_xlsx_path)), exist_ok=True)
         dst_wb.save(output_xlsx_path)
 
+        if progress_cb:
+            progress_cb(1.0, "樞紐彙整完成！")
         if log_cb:
             log_cb(f"🎉 樞紐彙整完成！中繼明細: {detail_written:,} 列，RECIPE彙整: {summary_written:,} 列")
 
@@ -438,12 +451,6 @@ class PivotAggregator:
                             row_data.append(",".join(code_list) if code_list else "")
 
                         ws.append(row_data)
-
-                        # 設定 A~D 欄純文字格式防止前導零遺失
-                        curr_row = ws[next_row]
-                        for c_i in range(min(4, len(curr_row))):
-                            curr_row[c_i].number_format = "@"
-
                         next_row += 1
                         total_written += 1
 
@@ -511,12 +518,6 @@ class PivotAggregator:
                             row_data.append(cls.display_rank(priority, whole_row=False))
 
                         ws.append(row_data)
-
-                        # 設定 A~D 欄純文字格式
-                        curr_row = ws[next_row]
-                        for c_i in range(min(4, len(curr_row))):
-                            curr_row[c_i].number_format = "@"
-
                         next_row += 1
                         total_written += 1
 

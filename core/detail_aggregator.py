@@ -222,7 +222,8 @@ class DetailAggregator:
         cls,
         manifest_csv_path: str,
         output_xlsx_path: str,
-        log_cb: Optional[Callable[[str], None]] = None
+        log_cb: Optional[Callable[[str], None]] = None,
+        progress_cb: Optional[Callable[[int, int, int, str], None]] = None
     ) -> Tuple[int, int, int]:
         """
         讀取下載清單 CSV，解析其所有「下載成功」的檔案，產出雙工作表 Excel 活頁簿：
@@ -255,6 +256,16 @@ class DetailAggregator:
         if path_col is None or status_col is None:
             raise ValueError("下載清單缺少必要欄位：'本地完整路徑' 或 '處理狀態'")
 
+        # 預先篩選所有「下載成功」之實體檔案
+        valid_items = []
+        for r_idx, r in enumerate(manifest_rows, start=2):
+            local_path = r[path_col].strip() if path_col < len(r) else ""
+            status = r[status_col].strip() if status_col < len(r) else ""
+            if status == "下載成功" and local_path:
+                valid_items.append((r_idx, r, local_path))
+
+        total_files = len(valid_items)
+
         # 2. 建立 OpenPyXL 活頁簿
         wb = openpyxl.Workbook()
 
@@ -284,28 +295,25 @@ class DetailAggregator:
         succeeded_files = 0
         failed_files = 0
 
-        for r_idx, r in enumerate(manifest_rows, start=2):
-            local_path = r[path_col].strip() if path_col < len(r) else ""
-            status = r[status_col].strip() if status_col < len(r) else ""
-
-            if status != "下載成功" or not local_path:
-                continue
-
+        for file_idx, (r_idx, r, local_path) in enumerate(valid_items, start=1):
             l1 = r[l1_col].strip() if l1_col is not None and l1_col < len(r) else ""
             pn = r[pn_col].strip() if pn_col is not None and pn_col < len(r) else ""
             l2 = r[l2_col].strip() if l2_col is not None and l2_col < len(r) else ""
             lot = r[lot_col].strip() if lot_col is not None and lot_col < len(r) else ""
 
+            fname = os.path.basename(local_path)
             rows, err = cls.parse_single_file(local_path, l1, pn, l2, lot)
             if err:
                 failed_files += 1
                 if log_cb:
-                    log_cb(f"[略過] 第 {r_idx} 列 {os.path.basename(local_path)}: {err}")
+                    log_cb(f"[略過] [{file_idx}/{total_files}] 第 {r_idx} 列 {fname}: {err}")
+                if progress_cb:
+                    progress_cb(file_idx, total_files, total_written, fname)
                 continue
 
             succeeded_files += 1
 
-            # 寫入工作表
+            # 寫入工作表 (直接 append，並以 O(1) 座標快速綁定純文字 @ 格式，兼具極致效能與純文字規格)
             for row_data in rows:
                 if row_in_sheet >= cls.MAX_ROWS_PER_SHEET:
                     page_no += 1
@@ -317,13 +325,20 @@ class DetailAggregator:
                 current_ws.append(row_data)
                 row_in_sheet += 1
                 total_written += 1
+                for c_idx in range(1, len(row_data)): # 前 10 欄 (A~J) 設為純文字 @
+                    current_ws.cell(row=row_in_sheet, column=c_idx).number_format = "@"
 
-                # 確保 A~J 純文字格式 (避免前導 0 遺失)
-                curr_row_cells = current_ws[row_in_sheet]
-                for c_idx in range(10): # 0 ~ 9 即 A ~ J
-                    curr_row_cells[c_idx].number_format = "@"
+            if progress_cb:
+                progress_cb(file_idx, total_files, total_written, fname)
+
+            # 每 5 個檔案或首尾檔案輸出即時日誌
+            if log_cb and (file_idx == 1 or file_idx % 5 == 0 or file_idx == total_files):
+                pct = (file_idx / total_files) * 100 if total_files > 0 else 100.0
+                log_cb(f"[{file_idx}/{total_files}] ({pct:.1f}%) 正在解析: {fname} (累計寫入 {total_written:,} 筆晶片)...")
 
         # 3. 儲存檔案
+        if log_cb:
+            log_cb(f"所有檔案解析完成 (共 {succeeded_files} 個成功檔，寫入 {total_written:,} 筆晶片)，正在儲存 Excel 活頁簿至硬碟 (請稍候)...")
         os.makedirs(os.path.dirname(os.path.abspath(output_xlsx_path)), exist_ok=True)
         wb.save(output_xlsx_path)
 

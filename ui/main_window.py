@@ -676,24 +676,36 @@ class MainWindow(ctk.CTk):
         output_xlsx = os.path.join(local_dir, f"下載與明細彙整_{timestamp_str}.xlsx")
 
         self.btn_aggregate.configure(state="disabled", text="彙整中...")
+        self.progress_bar.set(0.0)
+        self.lbl_file_prog.configure(text="彙整進度: 準備中 (0.0%)...")
         self._enqueue_log("INFO", f"開始進行晶片資料穿透解析與彙整，來源清單: {os.path.basename(manifest_csv)} ...")
+
+        def on_progress(cur: int, total: int, rows: int, fname: str):
+            pct = cur / total if total > 0 else 0.0
+            self.after(0, lambda: [
+                self.progress_bar.set(pct),
+                self.lbl_file_prog.configure(text=f"彙整進度: {cur}/{total} 檔 ({pct*100:.1f}%)")
+            ])
 
         def run_worker():
             try:
                 succeeded, failed, total_rows = DetailAggregator.aggregate_to_excel(
                     manifest_csv_path=manifest_csv,
                     output_xlsx_path=output_xlsx,
-                    log_cb=lambda msg: self._enqueue_log("WARNING", msg)
+                    log_cb=lambda msg: self._enqueue_log("INFO" if "正在" in msg or "完成" in msg else "WARNING", msg),
+                    progress_cb=on_progress
                 )
-                self._enqueue_log("SUCCESS", f"晶片明細彙整完成！共解析 {succeeded} 個檔案 (失敗/略過 {failed} 個)，寫入 {total_rows} 筆明細。")
+                self._enqueue_log("SUCCESS", f"晶片明細彙整完成！共解析 {succeeded} 個檔案 (失敗/略過 {failed} 個)，寫入 {total_rows:,} 筆明細。")
                 self._enqueue_log("SUCCESS", f"匯出檔案: {output_xlsx}")
 
                 def on_done():
+                    self.progress_bar.set(1.0)
+                    self.lbl_file_prog.configure(text=f"彙整完成！共 {succeeded} 檔 ({total_rows:,} 筆晶片)")
                     self._update_aggregate_btn_state()
                     self._update_aggregate2_btn_state()
                     ans = messagebox.askyesno(
                         "彙整完成",
-                        f"晶片資料彙整完成！\n共解析 {succeeded} 個檔案，寫入 {total_rows} 筆晶片明細。\n\n已成功產出：\n{os.path.basename(output_xlsx)}\n\n是否立即以 Excel 開啟活頁簿？"
+                        f"晶片資料彙整完成！\n共解析 {succeeded} 個檔案，寫入 {total_rows:,} 筆晶片明細。\n\n已成功產出：\n{os.path.basename(output_xlsx)}\n\n是否立即以 Excel 開啟活頁簿？"
                     )
                     if ans:
                         os.startfile(output_xlsx)
@@ -703,6 +715,7 @@ class MainWindow(ctk.CTk):
             except Exception as ex:
                 self._enqueue_log("ERROR", f"彙整失敗: {ex}")
                 self.after(0, lambda: [
+                    self.lbl_file_prog.configure(text="彙整失敗"),
                     self._update_aggregate_btn_state(),
                     self._update_aggregate2_btn_state(),
                     messagebox.showerror("彙整失敗", f"產出明細活頁簿時發生錯誤：\n{ex}")
@@ -779,19 +792,30 @@ class MainWindow(ctk.CTk):
         output_xlsx = os.path.join(local_dir, f"PN_LOT_RECIPE_明細與彙整_{timestamp_str}.xlsx")
 
         self.btn_aggregate2.configure(state="disabled", text="彙整2中...")
+        self.progress_bar.set(0.0)
+        self.lbl_file_prog.configure(text="彙整2進度: 準備中 (0.0%)...")
         self._enqueue_log("INFO", f"開始進行 PN/LOT/RECIPE 樞紐分析與 BIN 權重彙整，來源明細: {os.path.basename(source_xlsx)} ...")
+
+        def on_pivot_progress(pct: float, text: str):
+            self.after(0, lambda: [
+                self.progress_bar.set(pct),
+                self.lbl_file_prog.configure(text=f"彙整2: {text} ({pct*100:.0f}%)")
+            ])
 
         def run_worker():
             try:
                 src_rows, det_rows, sum_rows, out_path = PivotAggregator.aggregate_pivot(
                     source_xlsx_path=source_xlsx,
                     output_xlsx_path=output_xlsx,
-                    log_cb=lambda msg: self._enqueue_log("INFO", msg)
+                    log_cb=lambda msg: self._enqueue_log("INFO", msg),
+                    progress_cb=on_pivot_progress
                 )
-                self._enqueue_log("SUCCESS", f"晶片樞紐彙整完成！共讀取 {src_rows} 筆來源明細，產出 {det_rows} 列中繼明細、{sum_rows} 列 RECIPE 彙整。")
+                self._enqueue_log("SUCCESS", f"晶片樞紐彙整完成！共讀取 {src_rows:,} 筆來源明細，產出 {det_rows:,} 列中繼明細、{sum_rows:,} 列 RECIPE 彙整。")
                 self._enqueue_log("SUCCESS", f"匯出檔案: {out_path}")
 
                 def on_done():
+                    self.progress_bar.set(1.0)
+                    self.lbl_file_prog.configure(text=f"彙整2完成！中繼 {det_rows:,} 列，彙整 {sum_rows:,} 列")
                     self._update_aggregate2_btn_state()
                     ans = messagebox.askyesno(
                         "彙整2完成",
@@ -805,6 +829,7 @@ class MainWindow(ctk.CTk):
             except Exception as ex:
                 self._enqueue_log("ERROR", f"樞紐彙整失敗: {ex}")
                 self.after(0, lambda: [
+                    self.lbl_file_prog.configure(text="彙整2失敗"),
                     self._update_aggregate2_btn_state(),
                     messagebox.showerror("彙整失敗", f"產出樞紐分析活頁簿時發生錯誤：\n{ex}")
                 ])
