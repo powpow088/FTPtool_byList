@@ -588,7 +588,7 @@ class MainWindow(ctk.CTk):
 
     def _on_copy_lots_to_clipboard(self) -> None:
         """一鍵提取表格中所有批號，以純逗號串接並有序去重後複製至剪貼簿"""
-        rules = self.table_rules.get_rules()
+        rules = self.table_rules.get_all_rules()
         unique_lots = self.extract_distinct_lots(rules)
 
         if not unique_lots:

@@ -256,3 +256,6 @@ class CTkRuleTable(ctk.CTkFrame):
             if not item.is_completely_empty():
                 rules.append(item)
         return rules
+
+    # 相容別名
+    get_rules = get_all_rules

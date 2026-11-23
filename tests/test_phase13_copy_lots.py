@@ -84,6 +84,14 @@ def test_ui_copy_button_and_font_unification():
                 assert font_cfg[2] == "bold"
 
         print("  -> test_ui_copy_button_and_font_unification 驗證通過！")
+
+        # 驗證點擊複製批號按鈕事件正常運作無例外
+        win.table_rules.load_rules([
+            RuleItem(dirs=["PN_1", "LOT_001"]),
+            RuleItem(dirs=["PN_1", "LOT_002"])
+        ])
+        win._on_copy_lots_to_clipboard()
+        print("  -> test_copy_lots_to_clipboard_workflow 驗證通過！")
     finally:
         win.destroy()
 
