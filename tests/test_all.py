@@ -20,6 +20,7 @@ def run_all_tests():
         "tests/test_phase11_paired_keywords.py",
         "tests/test_phase12_detail_aggregation.py",
         "tests/test_phase13_copy_lots.py",
+        "tests/test_phase14_pivot_aggregation.py",
     ]
 
     print("==================================================")
@@ -41,7 +42,7 @@ def run_all_tests():
 
     print("\n==================================================")
     if all_passed:
-        print("  🎉🎉🎉 全數 12 大單元與整合測試 100% 通過！ 🎉🎉🎉")
+        print(f"  🎉🎉🎉 全數 {len(test_files)} 大單元與整合測試 100% 通過！ 🎉🎉🎉")
     else:
         print("  ❌ 存在未通過之測試項目，請檢修！")
     print("==================================================")
