@@ -351,3 +351,24 @@
   - [x] 16.3.3 將測試 12 納入 `tests/test_all.py`，確保 11 大模組 100% 通過
   - [x] 16.3.4 重新執行 `build_exe.py` 與 `build_portable.py` 編譯單檔 EXE 與綠色免安裝便攜 ZIP 包
   - [x] 16.3.5 提交代碼至 Git 並推送到 GitHub 遠端儲存庫
+
+---
+
+## 微階段 17：規則表格一鍵複製批號字串功能實作 (One-Click Distinct Lot Copying to Clipboard)
+- [x] 17.1 核心批號提取與過濾演算法實作 (`ui/main_window.py`)
+  - [x] 17.1.1 實作 `extract_distinct_lots(rules: List[RuleItem]) -> List[str]` 靜態方法
+  - [x] 17.1.2 支援動態層級批號定位：目錄層級 >= 2 優先提取第 2 層目錄 (`dirs[1]`)，單層目錄提取第 1 層目錄 (`dirs[0]`)
+  - [x] 17.1.3 智慧過濾標題列：排除空值與包含 `批號`, `lot`, `lot no`, `lot no.`, `lot id`, `lot_id`, `lot number` 等不區分大小寫之標題文字
+  - [x] 17.1.4 實作有序去重 (Distinct)：使用 `dict.fromkeys()` 保留原始資料首次出現順序，去除重複批號
+  - [x] 17.1.5 格式化串接：使用純逗點 `,` 無空格進行串接 (`','.join(...)`)
+- [x] 17.2 介面按鈕整合與剪貼簿操作 (`ui/main_window.py`)
+  - [x] 17.2.1 在規則操作列之比對模式選單右側（使用者圈選位置）新增 `btn_copy_lots` 按鈕，文字標示為 `[📋 複製批號 (,)]`
+  - [x] 17.2.2 按鈕配色採用紫色高質感樣式 (`fg_color="#6F42C1"`, `hover_color="#59359A"`)，與相鄰按鈕視覺區隔
+  - [x] 17.2.3 實作 `_on_copy_lots_to_clipboard()` 事件處理：安全寫入 Windows 系統剪貼簿 (`clipboard_clear` / `clipboard_append` / `update`)
+  - [x] 17.2.4 實作操作回饋：成功時於即時日誌視窗以 `SUCCESS` 標籤輸出「已成功複製 X 筆批號至剪貼簿（純逗號分隔，已自動去重）！」，若無有效資料則彈出提示
+  - [x] 17.2.5 在 `_set_running_state(self, running: bool)` 中將 `btn_copy_lots` 納入執行狀態連動（任務執行中設為停用）
+- [x] 17.3 單元測試與回歸驗證
+  - [x] 17.3.1 撰寫全新測試模組 `tests/test_phase13_copy_lots.py`：驗證單層與多層批號提取、標題列自動過濾、有序去重、純逗號串接與按鈕屬性
+  - [x] 17.3.2 將測試 13 納入 `tests/test_all.py`，確保 12 大單元與整合測試 100% 通過
+  - [x] 17.3.3 重新執行 `build_exe.py` 與 `build_portable.py` 編譯最新單檔 EXE 與綠色便攜 ZIP 包
+  - [x] 17.3.4 提交代碼至 Git 並推送到 GitHub 遠端儲存庫

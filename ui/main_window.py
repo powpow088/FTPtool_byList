@@ -145,6 +145,17 @@ class MainWindow(ctk.CTk):
         self.cb_match_mode.set("模糊包含 (Contains)")
         self.cb_match_mode.pack(side="left", padx=4)
 
+        # 複製批號按鈕 (純逗號串接 + 有序去重，位於目錄比對模式右側)
+        self.btn_copy_lots = ctk.CTkButton(
+            bar_frame,
+            text="📋 複製批號 (,)",
+            width=115,
+            fg_color="#6F42C1",
+            hover_color="#59359A",
+            command=self._on_copy_lots_to_clipboard
+        )
+        self.btn_copy_lots.pack(side="left", padx=(10, 4))
+
         self.table_rules = CTkRuleTable(rule_frame)
         self.table_rules.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
 
@@ -528,10 +539,57 @@ class MainWindow(ctk.CTk):
         self.btn_import_file.configure(state="disabled" if running else "normal")
         self.cb_match_mode.configure(state="disabled" if running else "normal")
         self.cb_delay.configure(state="disabled" if running else "normal")
+        self.btn_copy_lots.configure(state="disabled" if running else "normal")
         if running:
             self.btn_aggregate.configure(state="disabled")
         else:
             self._update_aggregate_btn_state()
+
+    @staticmethod
+    def extract_distinct_lots(rules: List[RuleItem]) -> List[str]:
+        """
+        從規則清單中提取有效批號 (Lot No.)：
+        - 若規則有 >= 2 層目錄，優先取第 2 層目錄 (dirs[1])；若只有 1 層目錄則取第 1 層 (dirs[0])
+        - 智慧過濾空行與標題列 (例如 '批號', 'lot', 'lot no', 'lot no.', 'lot id', 'lot_id')
+        - 有序去重 (Distinct)
+        """
+        excluded_headers = {
+            "批號", "lot", "lot no", "lot no.", "lot id", "lot_id",
+            "lot_no", "lotid", "lotnumber", "批次", "lot號", "lot編號"
+        }
+        raw_lots: List[str] = []
+        for r in rules:
+            if not r.dirs:
+                continue
+            # 若目錄有兩層或更多，批號通常位於第二層 (dirs[1])，否則取第一層 (dirs[0])
+            target_lot = r.dirs[1].strip() if len(r.dirs) >= 2 else r.dirs[0].strip()
+            if not target_lot:
+                continue
+            if target_lot.lower() in excluded_headers:
+                continue
+            raw_lots.append(target_lot)
+
+        # 有序去重 (保留先出現的順序)
+        return list(dict.fromkeys(raw_lots))
+
+    def _on_copy_lots_to_clipboard(self) -> None:
+        """一鍵提取表格中所有批號，以純逗號串接並有序去重後複製至剪貼簿"""
+        rules = self.table_rules.get_rules()
+        unique_lots = self.extract_distinct_lots(rules)
+
+        if not unique_lots:
+            messagebox.showinfo("提示", "表格內未找到有效的批號資料，請先貼上或匯入清單。")
+            return
+
+        joined_str = ",".join(unique_lots)
+        try:
+            self.clipboard_clear()
+            self.clipboard_append(joined_str)
+            self.update()  # 確保寫入 Windows 剪貼簿生效
+            msg = f"已成功複製 {len(unique_lots)} 筆批號至剪貼簿（純逗號分隔，已自動去重）！"
+            self._enqueue_log("SUCCESS", msg)
+        except Exception as e:
+            messagebox.showerror("複製失敗", f"寫入剪貼簿時發生錯誤：{e}")
 
     def _find_latest_download_manifest(self, local_dir: str) -> Optional[str]:
         """尋找本地目錄中最新的一份下載清單 CSV"""
