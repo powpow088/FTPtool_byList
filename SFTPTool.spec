@@ -12,9 +12,16 @@ hiddenimports = [
     'xlsxwriter',
     'python_calamine',
     'sqlite3',
+    'pymssql',
     'darkdetect',
     'customtkinter'
 ]
+
+# 收集 pymssql 的編譯二進位模組
+tmp_mssql = collect_all('pymssql')
+datas += tmp_mssql[0]
+binaries += tmp_mssql[1]
+hiddenimports += tmp_mssql[2]
 
 # 收集 python_calamine 的編譯二進位模組
 tmp_cal = collect_all('python_calamine')

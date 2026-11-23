@@ -22,6 +22,7 @@ def run_all_tests():
         "tests/test_phase13_copy_lots.py",
         "tests/test_phase14_pivot_aggregation.py",
         "tests/test_phase21_ultra_speed.py",
+        "tests/test_phase22_db_mapping.py",
     ]
 
     print("==================================================")

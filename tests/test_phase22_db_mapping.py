@@ -1,0 +1,151 @@
+# tests/test_phase22_db_mapping.py
+import os
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import openpyxl
+import xlsxwriter
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from core.db_config import DB_CONFIG, is_db_configured
+from core.db_connector import DatabaseConnector, parse_coord_int
+from core.detail_aggregator import DetailAggregator
+from core.pivot_aggregator import PivotAggregator
+from core.sidecar_cache import SidecarCacheWriter
+
+
+class TestPhase22DbMapping(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp_dir_obj = tempfile.TemporaryDirectory(prefix="wafer_db_test_")
+        self.tmp_dir = Path(self.tmp_dir_obj.name)
+
+    def tearDown(self) -> None:
+        self.tmp_dir_obj.cleanup()
+
+    def test_parse_coord_int(self) -> None:
+        """驗證座標清洗轉純整數邏輯"""
+        self.assertEqual(parse_coord_int("01"), 1)
+        self.assertEqual(parse_coord_int("1"), 1)
+        self.assertEqual(parse_coord_int(1), 1)
+        self.assertEqual(parse_coord_int(1.0), 1)
+        self.assertEqual(parse_coord_int(" 05 "), 5)
+        self.assertEqual(parse_coord_int(""), 0)
+        self.assertEqual(parse_coord_int(None), 0)
+        self.assertEqual(parse_coord_int("INVALID"), 0)
+
+    def test_db_config_unconfigured_fallback(self) -> None:
+        """驗證資料庫未配置時自動降級"""
+        with patch.dict(DB_CONFIG, {"server": "YOUR_SERVER_IP", "user": "YOUR_USERNAME", "enabled": True}):
+            self.assertFalse(is_db_configured())
+            res = DatabaseConnector.fetch_wafer_unit_base(["LOT01"])
+            self.assertEqual(res, {})
+
+        with patch.dict(DB_CONFIG, {"server": "127.0.0.1", "user": "sa", "enabled": False}):
+            self.assertFalse(is_db_configured())
+
+    def test_mock_db_batch_mapping_and_dedup(self) -> None:
+        """驗證資料庫批次查詢、座標 int 化、以及多值有序去重逗號串接"""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+
+        # 模擬 DB 查詢回傳結果 (LotNum, MPID, MP_X, MP_Y, PanelID, Scrapped)
+        # MPID_01: 有兩筆資料 (不同的 PanelID 與 Scrapped 0, 1)
+        # MPID_02: 單一資料
+        mock_cursor.fetchall.return_value = [
+            ("23BKE002-06-00", "MPID_01", 1.0, 1.0, "PANEL_A", 0),
+            ("23BKE002-06-00", "MPID_01", "01", "1", "PANEL_B", 1),
+            ("23BKE002-06-00", "MPID_02", 1, 2, "PANEL_C", 0),
+        ]
+
+        with patch.dict(DB_CONFIG, {"server": "10.0.0.1", "user": "test_user", "enabled": True}):
+            with patch("pymssql.connect", return_value=mock_conn):
+                result = DatabaseConnector.fetch_wafer_unit_base(["23BKE002-06-00"])
+
+        self.assertIn(("23BKE002-06-00", "MPID_01", 1, 1), result)
+        panels, scrapped = result[("23BKE002-06-00", "MPID_01", 1, 1)]
+        self.assertEqual(panels, "PANEL_A,PANEL_B")
+        self.assertEqual(scrapped, "0,1")
+
+        self.assertIn(("23BKE002-06-00", "MPID_02", 1, 2), result)
+        panels2, scrapped2 = result[("23BKE002-06-00", "MPID_02", 1, 2)]
+        self.assertEqual(panels2, "PANEL_C")
+        self.assertEqual(scrapped2, "0")
+
+    def test_pivot_aggregator_integration_with_panelid_scrapped(self) -> None:
+        """核心整合驗證：RECIPE彙整加入 PanelID 與 Scrapped 欄位，而中繼明細保持不變！"""
+        src_xlsx = self.tmp_dir / "src_test_db.xlsx"
+        writer = SidecarCacheWriter(src_xlsx)
+
+        # 晶片 1: MPID_01 (X=1, Y=2)
+        # 晶片 2: MPID_02 (X=3, Y=4)
+        rows = [
+            (
+                "214-3273242A-24W", "3273242", "23BKE002-06-000", "23BKE002-06-00", "24W",
+                "f1.csv", "MPID_01", "1", "2", "MPID_01_1_2", "1"
+            ),
+            (
+                "214-3273242A-SUB-C", "3273242", "23BKE002-06-000", "23BKE002-06-00", "SUB-C",
+                "f2.csv", "MPID_02", "3", "4", "MPID_02_3_4", "32"
+            ),
+        ]
+        src_xlsx.write_bytes(b"MOCK")
+        writer.write_batch(rows)
+        writer.finalize(src_xlsx)
+
+        # Mock DB 回傳字典
+        mock_db_map = {
+            ("23BKE002-06-00", "MPID_01", 1, 2): ("PANEL_X1,PANEL_X2", "0,1"),
+            ("23BKE002-06-00", "MPID_02", 3, 4): ("PANEL_Y1", "0"),
+        }
+
+        pivot_out = self.tmp_dir / "pivot_out_db.xlsx"
+
+        with patch.object(DatabaseConnector, "fetch_wafer_unit_base", return_value=mock_db_map):
+            src_rows, det_rows, sum_rows, _ = PivotAggregator.aggregate_pivot(
+                str(src_xlsx), str(pivot_out)
+            )
+
+        self.assertEqual(src_rows, 2)
+        self.assertEqual(sum_rows, 2)
+
+        wb_check = openpyxl.load_workbook(str(pivot_out))
+
+        # 1. 驗證「中繼明細_01」結構未被改動 (不包含 PanelID, Scrapped)
+        ws_det = wb_check["中繼明細_01"]
+        det_headers = [cell.value for cell in ws_det[1]]
+        self.assertEqual(det_headers[:4], ["PN", "第 2 層目錄(LOT)", "LOT", "MPID_XY"])
+        self.assertNotIn("PanelID", det_headers)
+        self.assertNotIn("Scrapped", det_headers)
+
+        # 2. 驗證「RECIPE彙整_01」結構精確包含 PanelID 與 Scrapped
+        ws_sum = wb_check["RECIPE彙整_01"]
+        sum_headers = [cell.value for cell in ws_sum[1]]
+        expected_fixed = [
+            "PN", "第 2 層目錄(LOT)", "LOT", "MPID_XY", "PanelID", "Scrapped", "BinCode_sumary"
+        ]
+        self.assertEqual(sum_headers[:7], expected_fixed)
+
+        # 驗證資料列 1 (MPID_01) 的 PanelID 與 Scrapped 成功注入
+        self.assertEqual(ws_sum["D2"].value, "MPID_01_01_02")
+        self.assertEqual(ws_sum["E2"].value, "PANEL_X1,PANEL_X2")
+        self.assertEqual(ws_sum["F2"].value, "0,1")
+        self.assertEqual(ws_sum["G2"].value, 1)  # BinCode_sumary
+
+        # 驗證資料列 2 (MPID_02) 的 PanelID 與 Scrapped 成功注入
+        self.assertEqual(ws_sum["D3"].value, "MPID_02_03_04")
+        self.assertEqual(ws_sum["E3"].value, "PANEL_Y1")
+        self.assertEqual(ws_sum["F3"].value, "0")
+        self.assertEqual(ws_sum["G3"].value, 32)  # BinCode_sumary
+
+        wb_check.close()
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

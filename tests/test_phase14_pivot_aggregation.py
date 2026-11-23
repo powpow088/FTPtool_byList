@@ -167,7 +167,7 @@ def test_aggregate_pivot_workflow():
         # 3. 檢驗 RECIPE 彙整
         ws_s = res_wb["RECIPE彙整_01"]
         s_headers = [cell.value for cell in ws_s[1]]
-        assert s_headers[:5] == ["PN", "第 2 層目錄(LOT)", "LOT", "MPID_XY", "BinCode_sumary"]
+        assert s_headers[:7] == ["PN", "第 2 層目錄(LOT)", "LOT", "MPID_XY", "PanelID", "Scrapped", "BinCode_sumary"]
         assert s_headers[-1] == "ERROR_blank"
 
         # 檢查晶片 A (CHIP_A_01_02)
@@ -179,19 +179,19 @@ def test_aggregate_pivot_workflow():
         assert s_row2[2] == "25A7E004-01-00"
         assert s_row2[3] == "CHIP_A_01_02"
         # BinCode_sumary: 晶片 A 在 24W 為 1，SUB-C 為 32 -> 整列最高權重必須是 32！
-        assert s_row2[4] == 32
+        assert s_row2[6] == 32
 
         # 檢查晶片 B (CHIP_B_02_03)
         # 只有 24W (BIN 2) -> BinCode_sumary 必須是 "Others"！
         s_row3 = [cell.value for cell in ws_s[3]]
         assert s_row3[3] == "CHIP_B_02_03"
-        assert s_row3[4] == "Others"
+        assert s_row3[6] == "Others"
 
         # 檢查晶片 C (CHIP_C_05_05): 只有空 RECIPE (ERROR_blank)
         # 關鍵驗證：ERROR_blank 絕對不能影響 BinCode_sumary，所以 BinCode_sumary 必須為空 (None 或 "")！
         s_row4 = [cell.value for cell in ws_s[4]]
         assert s_row4[3] == "CHIP_C_05_05"
-        assert s_row4[4] in ("", None)  # 不參與判定，顯示空值！
+        assert s_row4[6] in ("", None)  # 不參與判定，顯示空值！
         # 但在 ERROR_blank 欄位應有權重代碼 (BIN 32 -> 32)
         blank_col_idx = s_headers.index("ERROR_blank")
         assert s_row4[blank_col_idx] == 32

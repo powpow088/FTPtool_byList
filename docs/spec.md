@@ -137,6 +137,23 @@
      - 輸出檔案先於本機 `%TEMP%` 串流寫入，完成後透過 `safe_atomic_move` 搭配指數退避重試搬移至目標路徑，杜絕 Windows Defender / 企業防毒軟體 `WinError 32` 鎖檔干擾。
      - 批次迴圈加入 `sys.intern` 進行字串駐留，峰值記憶體穩定控制在 50 MB 以內。
 
+9. **MS SQL 資料庫對齊整合與 PanelID / Scrapped 欄位注入 (Micro-Phase 22)**：
+   - **連線庫選型與配置**：
+     - 採用免安裝 ODBC 驅動、支援純 Python/FreeTDS 的 `pymssql` 連線庫。
+     - 獨立連線設定檔 `core/db_config.py`，支援使用者直接填寫帳密常數，並支援 `MSSQL_HOST`、`MSSQL_USER` 等環境變數方便後端部署。
+     - 若未設定資料庫資訊或連線失敗，自動降級留空並記錄警告日誌，不中斷樞紐分析報表之產出。
+   - **對齊鍵值正規化 (Mapping Key Alignment)**：
+     - `LotNum`：採用 D 欄母批號 `LOT`。
+     - `MPID`：採用 `2D ID (MPID)`。
+     - `MP_X` 與 `MP_Y`：強制轉為純整數 `int` 比對（例如 `"01"` 與 `1` 均視為 `1`）。
+   - **巨量查詢效能最佳化**：
+     - 彙整 2 執行前收集所有出現的母批號，以 `SELECT [LotNum], [MPID], [MP_X], [MP_Y], [PanelID], [Scrapped] FROM [dc].[dbo].[YM_ULT_UnitBase] WHERE [LotNum] IN (...)` 進行單一/分批 (500 LOT/批) 查詢。
+     - 載入記憶體 Hash Map 進行 $O(1)$ 秒級 mapping。
+   - **報表欄位結構調整**：
+     - **`RECIPE彙整`**：固定欄位依序調整為 `[PN]` | `[第 2 層目錄(LOT)]` | `[LOT]` | `[MPID_XY]` | **`[PanelID]`** | **`[Scrapped]`** | `[BinCode_sumary]` | (各動態 RECIPE 欄位...)。
+     - **`中繼明細`**：維持原始欄位結構不變（不加入 PanelID 與 Scrapped）。
+     - 多筆對應處理：同一晶片在 DB 若有多筆記錄，將 PanelID 與 Scrapped 分別進行有序去重，並以純逗號 `,` 串接（如 `Panel1,Panel2`、`0,1`）。
+
 ---
 
 ### 3.4 精簡現代化 GUI 配置

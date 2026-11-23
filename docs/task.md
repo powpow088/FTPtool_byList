@@ -508,3 +508,32 @@
   - [x] 21.4.3 執行全套回歸測試 `python tests/test_all.py` 確保 14 大測試模組 100% 通過
   - [x] 21.4.4 重新執行 `build_exe.py` 與 `build_portable.py` 編譯最新單檔 EXE 與便攜 ZIP 包
   - [x] 21.4.5 提交代碼至 Git 並推送到 GitHub 遠端儲存庫
+
+---
+
+## 微階段 22：MS SQL 資料庫對齊整合與 PanelID / Scrapped 欄位注入 (Database Alignment & Field Injection)
+- [x] 22.1 資料庫連線配置模組實作 (`core/db_config.py` & `requirements.txt`)
+  - [x] 22.1.1 實作 `core/db_config.py` 之 `DB_CONFIG` 字典，預留 Server, Port, Database, User, Password, table_name, timeout, enabled
+  - [x] 22.1.2 實作 `is_db_configured()`：判斷 Server / User 是否為有效設定（非預設佔位符且非空白）
+  - [x] 22.1.3 在 `requirements.txt` 新增 `pymssql>=2.3.0`
+- [x] 22.2 MS SQL 批次載入器與記憶體映射實作 (`core/db_connector.py`)
+  - [x] 22.2.1 實作 `parse_coord_int(val)`：將字串或浮點座標清洗為純整數 `int`（例如 `'01'`, `1.0`, `1` -> `1`）
+  - [x] 22.2.2 實作 `DatabaseConnector.fetch_wafer_unit_base(mother_lots, log_cb)`：
+    - 未配置或未啟用時優雅退避回傳 `{}`，記錄提示日誌
+    - 每批 500 個 LOT 執行 `WHERE [LotNum] IN (...)` 批次查詢
+    - 以 `(LotNum, MPID, MP_X_int, MP_Y_int)` 複合鍵構建記憶體暫存結構
+    - 實作多筆記錄去重逗號串接（PanelID 與 Scrapped 分別維持有序去重並以逗號串接）
+    - 異常防護捕獲：遇連線中斷或逾時發布警告日誌並回傳 `{}`，不使程式崩潰
+- [x] 22.3 樞紐彙整引擎整合 PanelID 與 Scrapped 欄位注入 (`core/pivot_aggregator.py`)
+  - [x] 22.3.1 擴充第一階段 `summaries` 結構記錄晶片之 `(mpid, x_int, y_int)` 元組
+  - [x] 22.3.2 於輸出 `RECIPE彙整` 前調用 `DatabaseConnector.fetch_wafer_unit_base` 一次性撈取當前所有母批號之 DB 映射
+  - [x] 22.3.3 更新 `summary_fixed_headers`：`["PN", "第 2 層目錄(LOT)", "LOT", "MPID_XY", "PanelID", "Scrapped", "BinCode_sumary"]`
+  - [x] 22.3.4 更新 `summary_col_widths`：PanelID 欄寬 24，Scrapped 欄寬 14
+  - [x] 22.3.5 確保 `中繼明細` 結構維持原樣，不加入 PanelID 與 Scrapped
+  - [x] 22.3.6 於資料列寫出時以 $O(1)$ 速度填入 `panel_id_val` 與 `scrapped_val`
+- [x] 22.4 單元測試、全套回歸與發布打包
+  - [x] 22.4.1 撰寫單元測試 `tests/test_phase22_db_mapping.py`：驗證座標純整數轉換、Mock DB 批次映射、多值去重逗號串接、RECIPE彙整 7 大固定欄位順序、中繼明細欄位未變動、以及資料庫未設定/異常時優雅降級
+  - [x] 22.4.2 執行 `python tests/test_phase22_db_mapping.py` 驗證 100% 通過
+  - [x] 22.4.3 更新 `tests/test_all.py` 納入第 15 大測試套件，並執行全套驗證 100% 通過
+  - [x] 22.4.4 更新 `SFTPTool.spec` 加入 `pymssql` 二進位收集，重新執行 `build_exe.py` 與 `build_portable.py`
+  - [x] 22.4.5 提交代碼至 Git 並推送到 GitHub 遠端儲存庫

@@ -164,17 +164,17 @@ class TestPhase21UltraSpeed(unittest.TestCase):
         self.assertIn("25A7E004-01-002", ws_sum["B2"].value)
         self.assertEqual(ws_sum["C2"].value, "25A7E004-01-00")
         self.assertEqual(ws_sum["D2"].value, "CHIP_A_01_02")
-        # 跨晶圓最高權重比較：24W=1, SUB-C=32 -> 綜合判定必須為 32！
-        self.assertEqual(ws_sum["E2"].value, 32)
+        # 跨晶圓最高權重比較：24W=1, SUB-C=32 -> 綜合判定必須為 32 (Col G)！
+        self.assertEqual(ws_sum["G2"].value, 32)
 
-        # 驗證 ERROR_blank 欄位排除判定 (Row 3 只有空 RECIPE -> E3 為空)
-        self.assertIn(ws_sum["E3"].value, ("", None))
+        # 驗證 ERROR_blank 欄位排除判定 (Row 3 只有空 RECIPE -> G3 為空)
+        self.assertIn(ws_sum["G3"].value, ("", None))
 
         # 驗證表頭樣式深藍底 (#1F4E78) 與 ERROR_blank 深橘底 (#9C4A00 / #C65911)
         self.assertTrue(ws_sum["A1"].fill.fgColor.rgb.endswith("1F4E78"))
         self.assertTrue(
-            ws_sum["H1"].fill.fgColor.rgb.endswith("9C4A00")
-            or ws_sum["H1"].fill.fgColor.rgb.endswith("C65911")
+            ws_sum["J1"].fill.fgColor.rgb.endswith("9C4A00")
+            or ws_sum["J1"].fill.fgColor.rgb.endswith("C65911")
         )
         wb_check.close()
 

@@ -10,6 +10,7 @@ from python_calamine import CalamineWorkbook
 
 from core.excel_utils import safe_atomic_move, sanitize_xml_text
 from core.sidecar_cache import SidecarCacheReader, get_cache_path
+from core.db_connector import DatabaseConnector, parse_coord_int
 
 
 def sanitize_bin_value(val: Any) -> str:
@@ -429,15 +430,33 @@ class PivotAggregator:
                         "id_set": {},
                         "full_lists": {},
                         "bins": {},
-                        "row_ranks": {}
+                        "row_ranks": {},
+                        "chip_meta": {},
                     }
                 s_grp = sum_lots[lot]
+                if "chip_meta" not in s_grp:
+                    s_grp["chip_meta"] = {}
 
                 if mpid_xy not in s_grp["id_set"]:
                     s_idx = len(s_grp["ids"])
                     s_grp["ids"].append(mpid_xy)
                     s_grp["id_set"][mpid_xy] = s_idx
                     s_grp["full_lists"][s_idx] = [full_lot]
+
+                    # 提取並標準化晶片資訊 (MPID, MP_X_int, MP_Y_int)
+                    x_int = parse_coord_int(mp_x)
+                    y_int = parse_coord_int(mp_y)
+                    if (x_int == 0 and y_int == 0) and mpid_xy:
+                        parts = mpid_xy.split("_")
+                        if len(parts) >= 3 and parts[-1].isdigit() and parts[-2].isdigit():
+                            x_int = parse_coord_int(parts[-2])
+                            y_int = parse_coord_int(parts[-1])
+                    chip_id = mpid
+                    if not chip_id and mpid_xy:
+                        parts = mpid_xy.split("_")
+                        if len(parts) >= 3:
+                            chip_id = "_".join(parts[:-2])
+                    s_grp["chip_meta"][s_idx] = (chip_id, x_int, y_int)
                 else:
                     s_idx = s_grp["id_set"][mpid_xy]
                     if full_lot not in s_grp["full_lists"][s_idx]:
@@ -538,10 +557,19 @@ class PivotAggregator:
             if log_cb:
                 log_cb("正在產出 [RECIPE彙整] 交叉樞紐表...")
             if progress_cb:
-                progress_cb(0.7, "正在產出 RECIPE 彙整交叉表...")
+                progress_cb(0.65, "正在比對資料庫並產出 RECIPE 彙整交叉表...")
 
-            summary_fixed_headers = ["PN", "第 2 層目錄(LOT)", "LOT", "MPID_XY", "BinCode_sumary"]
-            summary_col_widths = [14, 46, 20, 30, 21] + [18] * (num_recipes + (1 if has_error_blank else 0))
+            # 批次向 DB 撈取所有母批之晶片資訊 (PanelID, Scrapped)
+            all_mother_lots = []
+            for pn, sum_lots in summaries.items():
+                all_mother_lots.extend(sum_lots.keys())
+
+            db_map = DatabaseConnector.fetch_wafer_unit_base(all_mother_lots, log_cb=log_cb)
+
+            summary_fixed_headers = [
+                "PN", "第 2 層目錄(LOT)", "LOT", "MPID_XY", "PanelID", "Scrapped", "BinCode_sumary"
+            ]
+            summary_col_widths = [14, 46, 20, 30, 24, 14, 21] + [18] * (num_recipes + (1 if has_error_blank else 0))
             summary_writer = PaginatedStreamSheetWriter(
                 workbook=wb,
                 base_sheet_name="RECIPE彙整",
@@ -558,10 +586,16 @@ class PivotAggregator:
                     if not ids:
                         continue
                     group_rows = []
+                    chip_meta_map = s_grp.get("chip_meta", {})
                     for idx, mpid_xy in enumerate(ids):
                         full_lot_str = ",".join(s_grp["full_lists"].get(idx, []))
                         row_rank = s_grp["row_ranks"].get(idx, 0)
                         summary_bincode = cls.display_rank(row_rank, whole_row=True)
+
+                        # 比對資料庫 mapping (Lot, MPID, X_int, Y_int)
+                        chip_id, chip_x, chip_y = chip_meta_map.get(idx, ("", 0, 0))
+                        db_match = db_map.get((lot, chip_id, chip_x, chip_y), ("", ""))
+                        panel_id_val, scrapped_val = db_match
 
                         tail = [""] * tail_cols
                         for rec_id, hit_dict in s_grp["bins"].items():
@@ -574,7 +608,7 @@ class PivotAggregator:
                                 offset = old_to_new_col[rec_id]
                                 tail[offset] = code_val
 
-                        group_rows.append([pn, full_lot_str, lot, mpid_xy, summary_bincode] + tail)
+                        group_rows.append([pn, full_lot_str, lot, mpid_xy, panel_id_val, scrapped_val, summary_bincode] + tail)
                     summary_writer.write_lot_group(group_rows)
 
             summary_writer.finish()
