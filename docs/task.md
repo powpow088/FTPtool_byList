@@ -558,3 +558,16 @@
 - [x] 23.4 打包發布與 Git 推送
   - [x] 23.4.1 重新編譯 `build_exe.py` 與 `build_portable.py` 產出最新安裝包
   - [x] 23.4.2 提交變更並推送到 GitHub 遠端儲存庫
+
+---
+
+## 微階段 24：執行控制按鈕列左右分流佈局優化 (Action Buttons Split Layout)
+- [x] 24.1 執行控制按鈕列靠右分組排版實作 (`ui/main_window.py`)
+  - [x] 24.1.1 左側主動作群組（維持 `side="left"` 靠左）：`[▶ 開始下載]`、`[📊 彙整資料]`、`[📊 彙整資料2]`
+  - [x] 24.1.2 右側輔助管理群組（改為 `side="right"` 靠右，由右至左依序 pack `self.btn_stop`、`self.btn_scan_only`、`self.btn_open_folder`）
+  - [x] 24.1.3 確保視覺呈現順序維持：左側 `[▶ 開始下載]` | `[📊 彙整資料]` | `[📊 彙整資料2]`，右側 `[📁 開啟下載資料夾]` | `[🔍 僅產出清單]` | `[⏹ 停止]`
+- [x] 24.2 全套自動化測試回歸驗證
+  - [x] 24.2.1 執行 `python tests/test_all.py` 驗證 15 大測試套件 100% 通過
+- [x] 24.3 打包發布與 Git 推送
+  - [x] 24.3.1 重新編譯 `build_exe.py` 與 `build_portable.py` 產出最新安裝包
+  - [x] 24.3.2 提交變更並推送到 GitHub 遠端儲存庫

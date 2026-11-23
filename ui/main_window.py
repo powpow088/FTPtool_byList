@@ -250,26 +250,27 @@ class MainWindow(ctk.CTk):
         )
         self.btn_aggregate2.pack(side="left", padx=5)
 
-        # 4. 開啟下載資料夾 - 統一 12pt 粗體
-        self.btn_open_folder = ctk.CTkButton(
-            ctrl_frame, text="📁 開啟下載資料夾", font=("Microsoft JhengHei UI", 12, "bold"),
-            command=self._on_open_local_folder
+        # 右側輔助管理群組 (靠右對齊，依序由右至左 pack 保持畫面呈現: [開啟下載資料夾] [僅產出清單] [停止])
+        # 6. 停止 (最右側防誤觸) - 統一 12pt 粗體
+        self.btn_stop = ctk.CTkButton(
+            ctrl_frame, text="⏹ 停止", font=("Microsoft JhengHei UI", 12, "bold"),
+            fg_color="#DC3545", hover_color="#C82333", state="disabled", command=self._on_stop_task
         )
-        self.btn_open_folder.pack(side="left", padx=5)
+        self.btn_stop.pack(side="right", padx=5)
 
         # 5. 僅產出清單 (純盤點模式) - 統一 12pt 粗體
         self.btn_scan_only = ctk.CTkButton(
             ctrl_frame, text="🔍 僅產出清單", font=("Microsoft JhengHei UI", 12, "bold"),
             fg_color="#17A2B8", hover_color="#138496", command=self._on_scan_only_task
         )
-        self.btn_scan_only.pack(side="left", padx=5)
+        self.btn_scan_only.pack(side="right", padx=5)
 
-        # 6. 停止 (移至最右側防誤觸) - 統一 12pt 粗體
-        self.btn_stop = ctk.CTkButton(
-            ctrl_frame, text="⏹ 停止", font=("Microsoft JhengHei UI", 12, "bold"),
-            fg_color="#DC3545", hover_color="#C82333", state="disabled", command=self._on_stop_task
+        # 4. 開啟下載資料夾 - 統一 12pt 粗體
+        self.btn_open_folder = ctk.CTkButton(
+            ctrl_frame, text="📁 開啟下載資料夾", font=("Microsoft JhengHei UI", 12, "bold"),
+            command=self._on_open_local_folder
         )
-        self.btn_stop.pack(side="left", padx=5)
+        self.btn_open_folder.pack(side="right", padx=5)
 
     def _setup_log_tags(self) -> None:
         """設定 Textbox 的彩色字元 Tag"""
