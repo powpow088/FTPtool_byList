@@ -54,21 +54,42 @@ def test_extract_distinct_lots_single_level():
     print("  -> test_extract_distinct_lots_single_level 驗證通過！")
 
 
-def test_ui_copy_button_exists():
-    """驗證介面上複製按鈕存在、名稱正確、外觀配色設定正確"""
+def test_ui_copy_button_and_font_unification():
+    """驗證複製按鈕綠色系外觀，以及底部 6 顆按鈕字型統一標準化"""
     win = MainWindow()
     try:
         assert hasattr(win, "btn_copy_lots")
         btn = win.btn_copy_lots
         assert "複製批號 (,)" in btn.cget("text")
-        print("  -> test_ui_copy_button_exists 驗證通過！")
+        # 驗證綠色系
+        assert btn.cget("fg_color") == "#198754"
+
+        # 驗證底部 6 顆按鈕字型嚴格一致為 ("Microsoft JhengHei UI", 12, "bold")
+        for b in [
+            win.btn_start,
+            win.btn_aggregate,
+            win.btn_open_manifest,
+            win.btn_open_folder,
+            win.btn_scan_only,
+            win.btn_stop
+        ]:
+            font_cfg = b.cget("font")
+            # 支援 CTkFont 或 tuple
+            if hasattr(font_cfg, "cget"):
+                assert font_cfg.cget("size") == 12
+                assert font_cfg.cget("weight") == "bold"
+            else:
+                assert font_cfg[1] == 12
+                assert font_cfg[2] == "bold"
+
+        print("  -> test_ui_copy_button_and_font_unification 驗證通過！")
     finally:
         win.destroy()
 
 
 if __name__ == "__main__":
-    print("=== 執行微階段 17 (一鍵複製批號清單) 單元測試 ===")
+    print("=== 執行微階段 17 & 18 (一鍵複製批號與字型統一) 單元測試 ===")
     test_extract_distinct_lots_two_levels()
     test_extract_distinct_lots_single_level()
-    test_ui_copy_button_exists()
-    print("=== 微階段 17 所有測試 100% 通過！ ===")
+    test_ui_copy_button_and_font_unification()
+    print("=== 所有測試 100% 通過！ ===")

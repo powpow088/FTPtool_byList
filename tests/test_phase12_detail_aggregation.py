@@ -14,13 +14,21 @@ from core.detail_aggregator import DetailAggregator
 
 
 def test_parse_recipe():
-    """驗證 RECIPE 連字號解析規則"""
+    """驗證 RECIPE 方案 2 (PN 錨點智慧定位 + 連字號自適應退避) 解析規則"""
+    # 優先方案: 帶 PN 錨點
+    assert DetailAggregator.parse_recipe("214-3273242A-SUB-C", "3273242") == "SUB-C"
+    assert DetailAggregator.parse_recipe("3273173A-DUMMY", "3273173") == "DUMMY"
+    assert DetailAggregator.parse_recipe("AAA-BBB-24W", "BBB") == "24W"
+    assert DetailAggregator.parse_recipe("PRODUCT-LINE-SUB-A", "LINE") == "SUB-A"
+
+    # 退避方案: 無 PN 或 PN 未命中
+    assert DetailAggregator.parse_recipe("214-3273242A-SUB-C") == "SUB-C"
+    assert DetailAggregator.parse_recipe("3273173A-DUMMY") == "DUMMY"
     assert DetailAggregator.parse_recipe("AAA-BBB-24W") == "24W"
-    assert DetailAggregator.parse_recipe("PRODUCT-LINE-SUB-A") == "SUB-A"
-    assert DetailAggregator.parse_recipe("SINGLE-ONE") == ""
+    assert DetailAggregator.parse_recipe("SINGLE-ONE") == "ONE"
     assert DetailAggregator.parse_recipe("NODASH") == ""
     assert DetailAggregator.parse_recipe("  A-B-C-D  ") == "C-D"
-    print("  -> test_parse_recipe 驗證通過！")
+    print("  -> test_parse_recipe (方案 2 PN 錨點) 驗證通過！")
 
 
 def test_parse_single_file_formats():

@@ -38,19 +38,38 @@ class DetailAggregator:
     ]
 
     @staticmethod
-    def parse_recipe(level1_dir: str) -> str:
+    def parse_recipe(level1_dir: str, pn: str = "") -> str:
         """
-        RECIPE 取第 1 層目錄第二個連字號 '-' 後的全部文字（例如 AAA-BBB-24W -> 24W）。
-        若無兩個連字號則回傳空字串。
+        RECIPE 解析演算法 (方案 2: 以 PN 為錨點自動定位 + 連字號自適應退避):
+        1. 優先方案: 若有提供 pn 且存在於 level1_dir:
+           - 找到 pn 在 level1_dir 中的位置
+           - 從 pn 之後尋找第一個連字號 '-'
+           - 若找到，則取該連字號之後的全部文字作為 RECIPE (例如 '214-3273242A-SUB-C' 配 '3273242' -> 'SUB-C')
+           - 亦涵蓋無廠區前綴結構 (例如 '3273173A-DUMMY' 配 '3273173' -> 'DUMMY')
+        2. 退避方案: 若無 pn 或 pn 未在目錄名中命中:
+           - 若有 >= 2 個連字號: 取第 2 個連字號後的全部文字 (例如 'AAA-BBB-SUB-C' -> 'SUB-C')
+           - 若只有 1 個連字號: 取第 1 個連字號後的全部文字 (例如 '3273173A-DUMMY' -> 'DUMMY')
+           - 若無連字號: 回傳空字串
         """
         s = level1_dir.strip()
-        first_dash = s.find("-")
-        if first_dash == -1:
-            return ""
-        second_dash = s.find("-", first_dash + 1)
-        if second_dash == -1:
-            return ""
-        return s[second_dash + 1:].strip()
+        p = pn.strip()
+
+        # 優先方案: 以 PN 為錨點
+        if p and p.lower() in s.lower():
+            pn_pos = s.lower().find(p.lower())
+            dash_pos = s.find("-", pn_pos + len(p))
+            if dash_pos != -1:
+                recipe = s[dash_pos + 1:].strip()
+                if recipe:
+                    return recipe
+
+        # 退避方案: 連字號數量自適應
+        dashes = [i for i, ch in enumerate(s) if ch == "-"]
+        if len(dashes) >= 2:
+            return s[dashes[1] + 1:].strip()
+        elif len(dashes) == 1:
+            return s[dashes[0] + 1:].strip()
+        return ""
 
     @staticmethod
     def read_local_text(file_path: str) -> str:
@@ -144,7 +163,7 @@ class DetailAggregator:
             return [], "前 10 列找不到 2D ID、X、Y、Unit BIN# 欄位"
 
         file_name = os.path.basename(file_path)
-        sub_code = cls.parse_recipe(level1)
+        sub_code = cls.parse_recipe(level1, pn)
         max_col_needed = max(id_col, x_col, y_col, bin_col)
 
         rows: List[List[Any]] = []

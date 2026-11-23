@@ -145,13 +145,14 @@ class MainWindow(ctk.CTk):
         self.cb_match_mode.set("模糊包含 (Contains)")
         self.cb_match_mode.pack(side="left", padx=4)
 
-        # 複製批號按鈕 (純逗號串接 + 有序去重，位於目錄比對模式右側)
+        # 複製批號按鈕 (純逗號串接 + 有序去重，綠色系外觀)
         self.btn_copy_lots = ctk.CTkButton(
             bar_frame,
             text="📋 複製批號 (,)",
             width=115,
-            fg_color="#6F42C1",
-            hover_color="#59359A",
+            font=("Microsoft JhengHei UI", 11, "bold"),
+            fg_color="#198754",
+            hover_color="#157347",
             command=self._on_copy_lots_to_clipboard
         )
         self.btn_copy_lots.pack(side="left", padx=(10, 4))
@@ -241,29 +242,31 @@ class MainWindow(ctk.CTk):
         )
         self.btn_aggregate.pack(side="left", padx=5)
 
-        # 3. 開啟下載清單 (Excel)
+        # 3. 開啟下載清單 (Excel) - 統一 12pt 粗體
         self.btn_open_manifest = ctk.CTkButton(
-            ctrl_frame, text="📑 開啟下載清單 (Excel)", font=("Microsoft JhengHei UI", 11, "bold"),
+            ctrl_frame, text="📑 開啟下載清單 (Excel)", font=("Microsoft JhengHei UI", 12, "bold"),
             fg_color="#1F538D", hover_color="#14375E", width=180, command=self._on_open_manifest
         )
         self.btn_open_manifest.pack(side="left", padx=5)
 
-        # 4. 開啟下載資料夾
+        # 4. 開啟下載資料夾 - 統一 12pt 粗體
         self.btn_open_folder = ctk.CTkButton(
-            ctrl_frame, text="📁 開啟下載資料夾", command=self._on_open_local_folder
+            ctrl_frame, text="📁 開啟下載資料夾", font=("Microsoft JhengHei UI", 12, "bold"),
+            command=self._on_open_local_folder
         )
         self.btn_open_folder.pack(side="left", padx=5)
 
-        # 5. 僅產出清單 (純盤點模式)
+        # 5. 僅產出清單 (純盤點模式) - 統一 12pt 粗體
         self.btn_scan_only = ctk.CTkButton(
             ctrl_frame, text="🔍 僅產出清單", font=("Microsoft JhengHei UI", 12, "bold"),
             fg_color="#17A2B8", hover_color="#138496", command=self._on_scan_only_task
         )
         self.btn_scan_only.pack(side="left", padx=5)
 
-        # 6. 停止 (移至最右側防誤觸)
+        # 6. 停止 (移至最右側防誤觸) - 統一 12pt 粗體
         self.btn_stop = ctk.CTkButton(
-            ctrl_frame, text="⏹ 停止", fg_color="#DC3545", hover_color="#C82333", state="disabled", command=self._on_stop_task
+            ctrl_frame, text="⏹ 停止", font=("Microsoft JhengHei UI", 12, "bold"),
+            fg_color="#DC3545", hover_color="#C82333", state="disabled", command=self._on_stop_task
         )
         self.btn_stop.pack(side="left", padx=5)
 

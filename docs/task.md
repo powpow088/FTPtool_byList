@@ -372,3 +372,23 @@
   - [x] 17.3.2 將測試 13 納入 `tests/test_all.py`，確保 12 大單元與整合測試 100% 通過
   - [x] 17.3.3 重新執行 `build_exe.py` 與 `build_portable.py` 編譯最新單檔 EXE 與綠色便攜 ZIP 包
   - [x] 17.3.4 提交代碼至 Git 並推送到 GitHub 遠端儲存庫
+
+---
+
+## 微階段 18：RECIPE 方案 2（PN 錨點智慧定位）升級、按鈕綠色系調色與按鈕字型統一 (Recipe Anchor Upgrade & UI Font Harmonization)
+- [x] 18.1 RECIPE 演算法升級 (`core/detail_aggregator.py`)
+  - [x] 18.1.1 升級 `DetailAggregator.parse_recipe(level1_dir: str, pn: str = "") -> str`
+  - [x] 18.1.2 優先以 `pn` 為錨點定位：尋找 `pn` 之後第一個連字號 `-` 之後的所有文字（驗證 `214-3273242A-SUB-C` 輸出 `SUB-C`、`3273173A-DUMMY` 輸出 `DUMMY`）
+  - [x] 18.1.3 退避機制：若無 `pn`，連字號 $\ge 2$ 個取第 2 個之後，若只有 1 個則取第 1 個之後
+  - [x] 18.1.4 在 `parse_single_file` 與 `aggregate_to_excel` 中傳入 `pn` 參數
+- [x] 18.2 介面按鈕字型與綠色系外觀統一 (`ui/main_window.py`)
+  - [x] 18.2.1 將 `btn_copy_lots` 調色為綠色系（`fg_color="#198754"`, `hover_color="#157347"`）
+  - [x] 18.2.2 底部 6 顆按鈕字型全面標準化統一為 `font=("Microsoft JhengHei UI", 12, "bold")`
+  - [x] 18.2.3 修正 `btn_open_manifest` 原 11 pt 過小問題
+  - [x] 18.2.4 補齊 `btn_open_folder` 與 `btn_stop` 遺失的 `font` 屬性，確保 6 顆按鈕大小粗細 100% 齊平
+- [x] 18.3 單元測試與回歸驗證
+  - [x] 18.3.1 更新 `tests/test_phase12_detail_aggregation.py`：加入 `3273173A-DUMMY` 與 `214-3273242A-SUB-C` 真實測試案例
+  - [x] 18.3.2 更新 `tests/test_phase13_copy_lots.py`：驗證綠色系配色與 6 顆按鈕字型一致性
+  - [x] 18.3.3 執行全套回歸測試 `python tests/test_all.py`，確保 12 大模組 100% 通過
+  - [x] 18.3.4 重新執行 `build_exe.py` 與 `build_portable.py` 編譯最新單檔 EXE 與綠色免安裝便攜 ZIP 包
+  - [x] 18.3.5 提交代碼至 Git 並推送到 GitHub 遠端儲存庫
