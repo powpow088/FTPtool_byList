@@ -64,10 +64,11 @@ def test_ui_copy_button_and_font_unification():
         # 驗證綠色系
         assert btn.cget("fg_color") == "#198754"
 
-        # 驗證底部 6 顆按鈕字型嚴格一致為 ("Microsoft JhengHei UI", 12, "bold")
+        # 驗證底部 7 顆按鈕字型嚴格一致為 ("Microsoft JhengHei UI", 12, "bold")
         for b in [
             win.btn_start,
             win.btn_aggregate,
+            win.btn_aggregate2,
             win.btn_open_manifest,
             win.btn_open_folder,
             win.btn_scan_only,

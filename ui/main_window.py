@@ -14,6 +14,7 @@ from models.data_models import (
 from core.config_manager import ConfigManager
 from core.worker import ConnectionTestWorker, DownloadWorker, UIEvent
 from core.detail_aggregator import DetailAggregator
+from core.pivot_aggregator import PivotAggregator
 from ui.rule_table_ctk import CTkRuleTable
 from ui.remote_browser_dialog import RemoteBrowserDialog
 
@@ -235,35 +236,42 @@ class MainWindow(ctk.CTk):
         )
         self.btn_start.pack(side="left", padx=5)
 
-        # 2. 彙整資料 (本次新增，具備三態高亮防呆)
+        # 2. 彙整資料 (原明細彙整，具備三態高亮防呆)
         self.btn_aggregate = ctk.CTkButton(
             ctrl_frame, text="📊 彙整資料", font=("Microsoft JhengHei UI", 12, "bold"),
             fg_color="#FD7E14", hover_color="#E8590C", command=self._on_aggregate_data_task
         )
         self.btn_aggregate.pack(side="left", padx=5)
 
-        # 3. 開啟下載清單 (Excel) - 統一 12pt 粗體
+        # 3. 彙整資料2 (本次新增，PN/LOT/RECIPE 樞紐與 BIN 權重分析，具備三態高亮防呆)
+        self.btn_aggregate2 = ctk.CTkButton(
+            ctrl_frame, text="📊 彙整資料2", font=("Microsoft JhengHei UI", 12, "bold"),
+            fg_color="#6F42C1", hover_color="#59359A", command=self._on_aggregate2_task
+        )
+        self.btn_aggregate2.pack(side="left", padx=5)
+
+        # 4. 開啟下載清單 (Excel) - 統一 12pt 粗體
         self.btn_open_manifest = ctk.CTkButton(
             ctrl_frame, text="📑 開啟下載清單 (Excel)", font=("Microsoft JhengHei UI", 12, "bold"),
             fg_color="#1F538D", hover_color="#14375E", width=180, command=self._on_open_manifest
         )
         self.btn_open_manifest.pack(side="left", padx=5)
 
-        # 4. 開啟下載資料夾 - 統一 12pt 粗體
+        # 5. 開啟下載資料夾 - 統一 12pt 粗體
         self.btn_open_folder = ctk.CTkButton(
             ctrl_frame, text="📁 開啟下載資料夾", font=("Microsoft JhengHei UI", 12, "bold"),
             command=self._on_open_local_folder
         )
         self.btn_open_folder.pack(side="left", padx=5)
 
-        # 5. 僅產出清單 (純盤點模式) - 統一 12pt 粗體
+        # 6. 僅產出清單 (純盤點模式) - 統一 12pt 粗體
         self.btn_scan_only = ctk.CTkButton(
             ctrl_frame, text="🔍 僅產出清單", font=("Microsoft JhengHei UI", 12, "bold"),
             fg_color="#17A2B8", hover_color="#138496", command=self._on_scan_only_task
         )
         self.btn_scan_only.pack(side="left", padx=5)
 
-        # 6. 停止 (移至最右側防誤觸) - 統一 12pt 粗體
+        # 7. 停止 (移至最右側防誤觸) - 統一 12pt 粗體
         self.btn_stop = ctk.CTkButton(
             ctrl_frame, text="⏹ 停止", font=("Microsoft JhengHei UI", 12, "bold"),
             fg_color="#DC3545", hover_color="#C82333", state="disabled", command=self._on_stop_task
@@ -311,6 +319,7 @@ class MainWindow(ctk.CTk):
                     self._last_manifest_csv = manifest_path
                     self._set_running_state(False)
                     self._update_aggregate_btn_state()
+                    self._update_aggregate2_btn_state()
                     self.lbl_file_prog.configure(text="目前檔案: 任務結束")
 
                     if manifest_path and os.path.exists(manifest_path):
@@ -545,8 +554,10 @@ class MainWindow(ctk.CTk):
         self.btn_copy_lots.configure(state="disabled" if running else "normal")
         if running:
             self.btn_aggregate.configure(state="disabled")
+            self.btn_aggregate2.configure(state="disabled")
         else:
             self._update_aggregate_btn_state()
+            self._update_aggregate2_btn_state()
 
     @staticmethod
     def extract_distinct_lots(rules: List[RuleItem]) -> List[str]:
@@ -679,6 +690,7 @@ class MainWindow(ctk.CTk):
 
                 def on_done():
                     self._update_aggregate_btn_state()
+                    self._update_aggregate2_btn_state()
                     ans = messagebox.askyesno(
                         "彙整完成",
                         f"晶片資料彙整完成！\n共解析 {succeeded} 個檔案，寫入 {total_rows} 筆晶片明細。\n\n已成功產出：\n{os.path.basename(output_xlsx)}\n\n是否立即以 Excel 開啟活頁簿？"
@@ -692,7 +704,109 @@ class MainWindow(ctk.CTk):
                 self._enqueue_log("ERROR", f"彙整失敗: {ex}")
                 self.after(0, lambda: [
                     self._update_aggregate_btn_state(),
+                    self._update_aggregate2_btn_state(),
                     messagebox.showerror("彙整失敗", f"產出明細活頁簿時發生錯誤：\n{ex}")
+                ])
+
+        threading.Thread(target=run_worker, daemon=True).start()
+
+    def _find_latest_detail_xlsx(self, local_dir: str) -> Optional[str]:
+        """尋找本地目錄中最新的一份下載與明細彙整 Excel"""
+        if not local_dir or not os.path.exists(local_dir):
+            return None
+        xlsxs = sorted(Path(local_dir).glob("下載與明細彙整_*.xlsx"), key=os.path.getmtime, reverse=True)
+        return str(xlsxs[0]) if xlsxs else None
+
+    def _find_latest_pivot_xlsx(self, local_dir: str) -> Optional[str]:
+        """尋找本地目錄中最新的一份 PN_LOT_RECIPE 樞紐分析 Excel"""
+        if not local_dir or not os.path.exists(local_dir):
+            return None
+        xlsxs = sorted(Path(local_dir).glob("PN_LOT_RECIPE_明細與彙整_*.xlsx"), key=os.path.getmtime, reverse=True)
+        return str(xlsxs[0]) if xlsxs else None
+
+    def _update_aggregate2_btn_state(self) -> None:
+        """
+        三態智慧按鈕偵測 (彙整資料2)：
+        1. 不可執行 (Disabled, 灰色): 本地無「下載與明細彙整_*.xlsx」
+        2. 可執行 (Highlight, 醒目紫): 本地有明細檔，但尚未產出對應的「PN_LOT_RECIPE_明細與彙整_*.xlsx」
+        3. 已有檔案 (Completed, 綠色/完成態): 本地已有對應的「PN_LOT_RECIPE_明細與彙整_*.xlsx」
+        """
+        if not hasattr(self, "btn_aggregate2"):
+            return
+
+        local_dir = self.ed_local_path.get().strip()
+        latest_detail_xlsx = self._find_latest_detail_xlsx(local_dir)
+
+        if not latest_detail_xlsx:
+            # 狀態 1: 不可執行 (灰色 Disabled)
+            self.btn_aggregate2.configure(
+                state="disabled",
+                text="📊 彙整資料2",
+                fg_color="#6C757D"
+            )
+            return
+
+        latest_pivot_xlsx = self._find_latest_pivot_xlsx(local_dir)
+
+        if latest_pivot_xlsx:
+            # 狀態 3: 已有檔案 (完成態 綠色)
+            self.btn_aggregate2.configure(
+                state="normal",
+                text="📊 彙整資料2 (已產出)",
+                fg_color="#20C997",
+                hover_color="#17A2B8"
+            )
+        else:
+            # 狀態 2: 可執行 (醒目紫色高亮)
+            self.btn_aggregate2.configure(
+                state="normal",
+                text="📊 彙整資料2",
+                fg_color="#6F42C1",
+                hover_color="#59359A"
+            )
+
+    def _on_aggregate2_task(self) -> None:
+        """點擊「📊 彙整資料2」時，以非同步執行緒進行晶圓座標補零、RECIPE 橫向轉置與 BIN 權重分析"""
+        import threading
+        local_dir = self.ed_local_path.get().strip()
+        source_xlsx = self._find_latest_detail_xlsx(local_dir)
+
+        if not source_xlsx or not os.path.exists(source_xlsx):
+            messagebox.showwarning("提示", "未找到有效的「下載與明細彙整_*.xlsx」，請先執行「📊 彙整資料」產出明細檔。")
+            return
+
+        timestamp_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_xlsx = os.path.join(local_dir, f"PN_LOT_RECIPE_明細與彙整_{timestamp_str}.xlsx")
+
+        self.btn_aggregate2.configure(state="disabled", text="彙整2中...")
+        self._enqueue_log("INFO", f"開始進行 PN/LOT/RECIPE 樞紐分析與 BIN 權重彙整，來源明細: {os.path.basename(source_xlsx)} ...")
+
+        def run_worker():
+            try:
+                src_rows, det_rows, sum_rows, out_path = PivotAggregator.aggregate_pivot(
+                    source_xlsx_path=source_xlsx,
+                    output_xlsx_path=output_xlsx,
+                    log_cb=lambda msg: self._enqueue_log("INFO", msg)
+                )
+                self._enqueue_log("SUCCESS", f"晶片樞紐彙整完成！共讀取 {src_rows} 筆來源明細，產出 {det_rows} 列中繼明細、{sum_rows} 列 RECIPE 彙整。")
+                self._enqueue_log("SUCCESS", f"匯出檔案: {out_path}")
+
+                def on_done():
+                    self._update_aggregate2_btn_state()
+                    ans = messagebox.askyesno(
+                        "彙整2完成",
+                        f"晶片樞紐資料彙整完成！\n共處理 {src_rows:,} 筆明細，產出 {det_rows:,} 列中繼明細與 {sum_rows:,} 列 RECIPE 彙整。\n\n已成功產出：\n{os.path.basename(out_path)}\n\n是否立即以 Excel 開啟活頁簿？"
+                    )
+                    if ans:
+                        os.startfile(out_path)
+
+                self.after(0, on_done)
+
+            except Exception as ex:
+                self._enqueue_log("ERROR", f"樞紐彙整失敗: {ex}")
+                self.after(0, lambda: [
+                    self._update_aggregate2_btn_state(),
+                    messagebox.showerror("彙整失敗", f"產出樞紐分析活頁簿時發生錯誤：\n{ex}")
                 ])
 
         threading.Thread(target=run_worker, daemon=True).start()
@@ -736,6 +850,7 @@ class MainWindow(ctk.CTk):
             self.ed_local_path.delete(0, "end")
             self.ed_local_path.insert(0, os.path.normpath(folder))
             self._update_aggregate_btn_state()
+            self._update_aggregate2_btn_state()
 
     def _on_open_manifest(self) -> None:
         """一鍵開啟當次任務產出的清單 CSV (支援下載清單與檢索清單)"""
@@ -794,6 +909,7 @@ class MainWindow(ctk.CTk):
         self.ed_local_path.insert(0, search_cfg.local_save_path)
         self.table_rules.load_rules(rules)
         self._update_aggregate_btn_state()
+        self._update_aggregate2_btn_state()
 
     def _on_close_window(self) -> None:
         if self._dl_worker and self._dl_worker.is_alive():

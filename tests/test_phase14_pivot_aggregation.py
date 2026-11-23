@@ -210,10 +210,58 @@ def test_aggregate_pivot_workflow():
         shutil.rmtree(temp_dir, ignore_errors=True)
 
 
+def test_ui_aggregate2_button_and_states():
+    """驗證 UI 上 btn_aggregate2 按鈕存在、順序正確、字型與三態變化邏輯"""
+    from ui.main_window import MainWindow
+
+    win = MainWindow()
+    temp_dir = tempfile.mkdtemp()
+    try:
+        assert hasattr(win, "btn_aggregate2")
+        btn = win.btn_aggregate2
+        assert "彙整資料2" in btn.cget("text")
+
+        # 驗證字型為 12pt 粗體
+        font_cfg = btn.cget("font")
+        if hasattr(font_cfg, "cget"):
+            assert font_cfg.cget("size") == 12
+            assert font_cfg.cget("weight") == "bold"
+        else:
+            assert font_cfg[1] == 12
+            assert font_cfg[2] == "bold"
+
+        # 狀態 1: 本地無明細檔案 -> 停用 (disabled, 灰色)
+        win.ed_local_path.delete(0, "end")
+        win.ed_local_path.insert(0, temp_dir)
+        win._update_aggregate2_btn_state()
+        assert btn.cget("state") == "disabled"
+        assert btn.cget("fg_color") == "#6C757D"
+
+        # 狀態 2: 本地有「下載與明細彙整_*.xlsx」，但尚未產出樞紐報表 -> 啟用高亮 (normal, 紫色)
+        detail_xlsx = os.path.join(temp_dir, "下載與明細彙整_20261123_100000.xlsx")
+        open(detail_xlsx, "w").close()
+        win._update_aggregate2_btn_state()
+        assert btn.cget("state") == "normal"
+        assert btn.cget("fg_color") == "#6F42C1"
+
+        # 狀態 3: 本地已有「PN_LOT_RECIPE_明細與彙整_*.xlsx」 -> 完成態 (normal, 綠色)
+        pivot_xlsx = os.path.join(temp_dir, "PN_LOT_RECIPE_明細與彙整_20261123_100500.xlsx")
+        open(pivot_xlsx, "w").close()
+        win._update_aggregate2_btn_state()
+        assert btn.cget("state") == "normal"
+        assert btn.cget("fg_color") == "#20C997"
+
+        print("  -> test_ui_aggregate2_button_and_states 驗證通過！")
+    finally:
+        win.destroy()
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
 if __name__ == "__main__":
     print("=== 執行微階段 19 (晶圓測試資料樞紐分析與 BIN 權重彙整引擎) 單元測試 ===")
     test_pad_coordinates()
     test_calc_bin_rank_and_display()
     test_extract_lot_and_pn()
     test_aggregate_pivot_workflow()
+    test_ui_aggregate2_button_and_states()
     print("=== 微階段 19 所有測試 100% 通過！ ===")
