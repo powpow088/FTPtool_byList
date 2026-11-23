@@ -209,7 +209,7 @@ class TestPhase7Dynamic(unittest.TestCase):
             self.assertTrue(hasattr(win, "btn_toggle_pass"))
             self.assertTrue(hasattr(win, "btn_browse_remote"))
             self.assertTrue(hasattr(win, "cb_match_mode"))
-            self.assertTrue(hasattr(win, "btn_open_manifest"))
+            self.assertTrue(hasattr(win, "btn_open_folder"))
 
             # 驗證精簡移除之按鈕不存在
             self.assertFalse(hasattr(win, "btn_add_row"))

@@ -537,3 +537,24 @@
   - [x] 22.4.3 更新 `tests/test_all.py` 納入第 15 大測試套件，並執行全套驗證 100% 通過
   - [x] 22.4.4 更新 `SFTPTool.spec` 加入 `pymssql` 二進位收集，重新執行 `build_exe.py` 與 `build_portable.py`
   - [x] 22.4.5 提交代碼至 Git 並推送到 GitHub 遠端儲存庫
+
+---
+
+## 微階段 23：UI 按鈕精簡與傳輸頻率選單簡化 (UI Simplification & Delay Options)
+- [x] 23.1 執行控制按鈕列精簡 (`ui/main_window.py`)
+  - [x] 23.1.1 移除 `self.btn_open_manifest` (開啟下載清單 Excel) 按鈕控制項及其 pack 排版
+  - [x] 23.1.2 底部按鈕列排列依序為：`[▶ 開始下載]`、`[📊 彙整資料]`、`[📊 彙整資料2]`、`[📁 開啟下載資料夾]`、`[🔍 僅產出清單]`、`[⏹ 停止]`，共 6 顆按鈕
+  - [x] 23.1.3 維持按鈕樣式與字型統一：所有 6 顆按鈕維持 `("Microsoft JhengHei UI", 12, "bold")`
+- [x] 23.2 傳輸頻率下拉清單文字精簡與映射邏輯調整 (`ui/main_window.py`)
+  - [x] 23.2.1 改造 `self.cb_delay` 選項清單為 `["中", "慢", "急速"]`，寬度調整為 90
+  - [x] 23.2.2 設定預設顯示文字為 `"中"` (對應 50ms)
+  - [x] 23.2.3 調整 `_collect_current_config()` 頻率數值轉換：`"急速"` (及相容 `"極速"`) -> 0ms、`"慢"` -> 150ms、`"中"` (及預設) -> 50ms
+  - [x] 23.2.4 調整 `_apply_loaded_config()` 頻率回填：0ms 填入 `"急速"`、>=150ms 填入 `"慢"`、其餘填入 `"中"`
+- [x] 23.3 測試案例同步更新與回歸驗證
+  - [x] 23.3.1 更新 `tests/test_phase12_detail_aggregation.py`：驗證現有 6 顆按鈕存在與文字標題，移除 `btn_open_manifest` 斷言
+  - [x] 23.3.2 更新 `tests/test_phase13_copy_lots.py`：驗證現有 6 顆按鈕維持統一 12pt 粗體字型
+  - [x] 23.3.3 更新 `tests/test_phase7_dynamic.py`：移除 `btn_open_manifest` 屬性檢查
+  - [x] 23.3.4 執行 `python tests/test_all.py` 驗證 15 大測試套件 100% 通過
+- [x] 23.4 打包發布與 Git 推送
+  - [x] 23.4.1 重新編譯 `build_exe.py` 與 `build_portable.py` 產出最新安裝包
+  - [x] 23.4.2 提交變更並推送到 GitHub 遠端儲存庫

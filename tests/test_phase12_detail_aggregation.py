@@ -216,10 +216,9 @@ def test_ui_button_order_and_states():
 
     win = MainWindow()
     try:
-        # 驗證 6 顆按鈕屬性均存在
+        # 驗證 5 顆現存動作按鈕屬性均存在 (原 btn_open_manifest 已依需求精簡移除)
         assert hasattr(win, "btn_start")
         assert hasattr(win, "btn_aggregate")
-        assert hasattr(win, "btn_open_manifest")
         assert hasattr(win, "btn_open_folder")
         assert hasattr(win, "btn_scan_only")
         assert hasattr(win, "btn_stop")
@@ -227,7 +226,6 @@ def test_ui_button_order_and_states():
         # 驗證按鈕文字符合簡化後規格
         assert "開始下載" in win.btn_start.cget("text")
         assert "彙整資料" in win.btn_aggregate.cget("text")
-        assert "開啟下載清單 (Excel)" in win.btn_open_manifest.cget("text")
         assert "開啟下載資料夾" in win.btn_open_folder.cget("text")
         assert "僅產出清單" in win.btn_scan_only.cget("text")
         assert "停止" in win.btn_stop.cget("text")

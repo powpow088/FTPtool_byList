@@ -189,10 +189,10 @@ class MainWindow(ctk.CTk):
         ctk.CTkLabel(cfg_frame, text="傳輸頻率:").grid(row=1, column=4, sticky="e", padx=5, pady=4)
         self.cb_delay = ctk.CTkOptionMenu(
             cfg_frame,
-            values=["穩定推薦 (50ms)", "溫和防封 (150ms)", "極速 (0ms)"],
-            width=130
+            values=["中", "慢", "急速"],
+            width=90
         )
-        self.cb_delay.set("穩定推薦 (50ms)")
+        self.cb_delay.set("中")
         self.cb_delay.grid(row=1, column=5, sticky="ew", padx=5, pady=4)
 
         ctk.CTkLabel(cfg_frame, text="本地儲存路徑:").grid(row=2, column=0, sticky="e", padx=5, pady=4)
@@ -250,28 +250,21 @@ class MainWindow(ctk.CTk):
         )
         self.btn_aggregate2.pack(side="left", padx=5)
 
-        # 4. 開啟下載清單 (Excel) - 統一 12pt 粗體
-        self.btn_open_manifest = ctk.CTkButton(
-            ctrl_frame, text="📑 開啟下載清單 (Excel)", font=("Microsoft JhengHei UI", 12, "bold"),
-            fg_color="#1F538D", hover_color="#14375E", width=180, command=self._on_open_manifest
-        )
-        self.btn_open_manifest.pack(side="left", padx=5)
-
-        # 5. 開啟下載資料夾 - 統一 12pt 粗體
+        # 4. 開啟下載資料夾 - 統一 12pt 粗體
         self.btn_open_folder = ctk.CTkButton(
             ctrl_frame, text="📁 開啟下載資料夾", font=("Microsoft JhengHei UI", 12, "bold"),
             command=self._on_open_local_folder
         )
         self.btn_open_folder.pack(side="left", padx=5)
 
-        # 6. 僅產出清單 (純盤點模式) - 統一 12pt 粗體
+        # 5. 僅產出清單 (純盤點模式) - 統一 12pt 粗體
         self.btn_scan_only = ctk.CTkButton(
             ctrl_frame, text="🔍 僅產出清單", font=("Microsoft JhengHei UI", 12, "bold"),
             fg_color="#17A2B8", hover_color="#138496", command=self._on_scan_only_task
         )
         self.btn_scan_only.pack(side="left", padx=5)
 
-        # 7. 停止 (移至最右側防誤觸) - 統一 12pt 粗體
+        # 6. 停止 (移至最右側防誤觸) - 統一 12pt 粗體
         self.btn_stop = ctk.CTkButton(
             ctrl_frame, text="⏹ 停止", font=("Microsoft JhengHei UI", 12, "bold"),
             fg_color="#DC3545", hover_color="#C82333", state="disabled", command=self._on_stop_task
@@ -467,9 +460,9 @@ class MainWindow(ctk.CTk):
             match_mode = MatchMode.FUZZY
 
         delay_text = self.cb_delay.get()
-        if "極速" in delay_text:
+        if "急速" in delay_text or "極速" in delay_text:
             delay_ms = 0
-        elif "150ms" in delay_text:
+        elif "慢" in delay_text or "150ms" in delay_text:
             delay_ms = 150
         else:
             delay_ms = 50
@@ -925,11 +918,11 @@ class MainWindow(ctk.CTk):
             self.cb_match_mode.set("模糊包含 (Contains)")
 
         if search_cfg.request_delay_ms == 0:
-            self.cb_delay.set("極速 (0ms)")
+            self.cb_delay.set("急速")
         elif search_cfg.request_delay_ms >= 150:
-            self.cb_delay.set("溫和防封 (150ms)")
+            self.cb_delay.set("慢")
         else:
-            self.cb_delay.set("穩定推薦 (50ms)")
+            self.cb_delay.set("中")
 
         self.ed_local_path.insert(0, search_cfg.local_save_path)
         self.table_rules.load_rules(rules)
