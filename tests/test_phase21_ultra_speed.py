@@ -39,7 +39,8 @@ class TestPhase21UltraSpeed(unittest.TestCase):
         batch = [
             (
                 "L1", "PN01", "L2_A", "LOT01", f"REC_{i % 5}",
-                "file.csv", f"ID{i}", "1", "2", f"ID{i}_1_2", "1"
+                "file.csv", f"ID{i}", "1", "2", f"ID{i}_1_2",
+                "PANEL_01", "0", "1"
             )
             for i in range(10_000)
         ]
@@ -66,10 +67,10 @@ class TestPhase21UltraSpeed(unittest.TestCase):
         wb = xlsxwriter.Workbook(str(ext_xlsx))
         ws = wb.add_worksheet("工作表2")
         ws.write_row(0, 0, DetailAggregator.DETAIL_HEADERS)
-        ws.write_row(1, 0, ["L1", "PN1", "L2A", "LOT1", "CP1", "f1.csv", "W1", 1, 2, "W1_1_2", 1.0])
-        ws.write_row(2, 0, ["L1", "PN1", "L2A", "LOT1", "CP2", "f2.csv", "W1", 1, 2, "W1_1_2", 32])
-        ws.write_row(3, 0, ["L1", "PN1", "L2A", "LOT1", "CP3", "f3.csv", "W1", 1, 2, "W1_1_2", "01"])
-        ws.write_row(4, 0, ["L1", "PN1", "L2A", "LOT1", "CP4", "f4.csv", "W1", 1, 2, "W1_1_2", None])
+        ws.write_row(1, 0, ["L1", "PN1", "L2A", "LOT1", "CP1", "f1.csv", "W1", 1, 2, "W1_1_2", "", "", 1.0])
+        ws.write_row(2, 0, ["L1", "PN1", "L2A", "LOT1", "CP2", "f2.csv", "W1", 1, 2, "W1_1_2", "", "", 32])
+        ws.write_row(3, 0, ["L1", "PN1", "L2A", "LOT1", "CP3", "f3.csv", "W1", 1, 2, "W1_1_2", "", "", "01"])
+        ws.write_row(4, 0, ["L1", "PN1", "L2A", "LOT1", "CP4", "f4.csv", "W1", 1, 2, "W1_1_2", "", "", None])
         wb.close()
 
         self.assertFalse(get_cache_path(ext_xlsx).exists())
@@ -124,7 +125,7 @@ class TestPhase21UltraSpeed(unittest.TestCase):
         self.assertEqual(ws2["A1"].value, "第 1 層目錄")
         self.assertEqual(ws2["A2"].number_format, "@")
         self.assertEqual(ws2["J2"].value, "CHIP01_1_2")
-        self.assertEqual(ws2["K2"].value, 1)
+        self.assertEqual(ws2["M2"].value, 1)
         wb_check.close()
 
     def test_pivot_aggregator_mother_lot_merging_and_styles(self) -> None:
@@ -134,9 +135,9 @@ class TestPhase21UltraSpeed(unittest.TestCase):
 
         # 晶片 A 在兩片不同晶圓 (25A7E004-01-000 與 25A7E004-01-002)，母批號皆為 25A7E004-01-00
         rows = [
-            ("214-3273242A-24W", "3273242", "25A7E004-01-000", "25A7E004-01-00", "24W", "f1.csv", "CHIP_A", "1", "2", "CHIP_A_1_2", "1"),
-            ("214-3273242A-SUB-C", "3273242", "25A7E004-01-002", "25A7E004-01-00", "SUB-C", "f2.csv", "CHIP_A", "01", "02", "CHIP_A_01_02", "32"),
-            ("3273173A-NOREC", "3273173", "25B12001-01-00", "25B12001-01-00", "", "f3.csv", "CHIP_B", "5", "5", "CHIP_B_5_5", "32"),
+            ("214-3273242A-24W", "3273242", "25A7E004-01-000", "25A7E004-01-00", "24W", "f1.csv", "CHIP_A", "1", "2", "CHIP_A_1_2", "", "", "1"),
+            ("214-3273242A-SUB-C", "3273242", "25A7E004-01-002", "25A7E004-01-00", "SUB-C", "f2.csv", "CHIP_A", "01", "02", "CHIP_A_01_02", "", "", "32"),
+            ("3273173A-NOREC", "3273173", "25B12001-01-00", "25B12001-01-00", "", "f3.csv", "CHIP_B", "5", "5", "CHIP_B_5_5", "", "", "32"),
         ]
         src_xlsx.write_bytes(b"MOCK_SRC")
         writer.write_batch(rows)

@@ -571,3 +571,29 @@
 - [x] 24.3 打包發布與 Git 推送
   - [x] 24.3.1 重新編譯 `build_exe.py` 與 `build_portable.py` 產出最新安裝包
   - [x] 24.3.2 提交變更並推送到 GitHub 遠端儲存庫
+
+---
+
+## 微階段 25：資料庫對齊整合前移至彙整 1 (ETL 前置整合與秒級樞紐分析)
+- [x] 25.1 旁路快取結構升級支援 PanelID 與 Scrapped (`core/sidecar_cache.py`)
+  - [x] 25.1.1 改造 `wafer_details` 資料表結構為 13 欄（新增 `panel_id TEXT` 與 `scrapped TEXT` 於 `mpid_xy` 與 `bin_val` 之間）
+  - [x] 25.1.2 改造 `SidecarCacheWriter.write_batch` 支援 13 元組批次寫入
+  - [x] 25.1.3 改造 `SidecarCacheReader.stream_records` 查詢並串流傳回 13 欄元組
+- [x] 25.2 彙整 1 引擎整合資料庫批次查詢與 13 欄明細輸出 (`core/detail_aggregator.py`)
+  - [x] 25.2.1 更新 `DETAIL_HEADERS` 為 13 欄：加入 `PanelID`（K 欄）與 `Scrapped`（L 欄），`Unit BIN#` 順延至 M 欄（第 13 欄）
+  - [x] 25.2.2 更新 `COLUMN_WIDTHS` 與 `DETAIL_COL_WIDTHS_LIST`：PanelID 寬度 24，Scrapped 寬度 14，A~L（索引 0~11）鎖定純文字格式 `@`，M 欄鎖定 General / 數值
+  - [x] 25.2.3 在 `aggregate_to_excel` 解析檔案前，從下載清單有效項目中提取所有母批號清單，呼叫 `DatabaseConnector.fetch_wafer_unit_base` 一次性載入 DB 映射字典
+  - [x] 25.2.4 改造 `parse_single_file` 接收 `db_map` 參數，以 `(clean_lot, unit_id, x_int, y_int)` 複合鍵映射並填入 `panel_id` 與 `scrapped`
+  - [x] 25.2.5 寫出至 `工作表2` 與推入 `SidecarCacheWriter` 時同步寫入 13 欄完整資料
+- [x] 25.3 彙整 2 引擎解耦資料庫連線並直接消費明細欄位 (`core/pivot_aggregator.py`)
+  - [x] 25.3.1 更新 `REQUIRED_COLS` 納入 `PanelID` 與 `Scrapped`
+  - [x] 25.3.2 串流讀取時直接取得 `panel_id` 與 `scrapped`，並儲存至 `summaries[pn][lot]["chip_meta"][s_idx]`
+  - [x] 25.3.3 移除 `PivotAggregator` 內對 `DatabaseConnector.fetch_wafer_unit_base` 的二次呼叫，達成純本地秒級樞紐運算
+  - [x] 25.3.4 輸出 `RECIPE彙整` 時直接從 `chip_meta` 取出 `panel_id` 與 `scrapped` 填入 Col E 與 Col F
+  - [x] 25.3.5 保持 `中繼明細` 工作表結構維持原樣（不輸出這兩欄）
+- [x] 25.4 單元測試與全套回歸測試驗收
+  - [x] 25.4.1 更新 `tests/test_phase12_detail_aggregation.py` 相容 13 欄明細與表頭格式斷言
+  - [x] 25.4.2 更新 `tests/test_phase21_ultra_speed.py` 相容 13 欄快取讀寫
+  - [x] 25.4.3 更新 `tests/test_phase22_db_mapping.py` 驗證彙整 1 整合 DB 與彙整 2 免連線樞紐整合
+  - [x] 25.4.4 執行 `python tests/test_all.py` 確保 15 大測試模組 100% 通過
+  - [x] 25.4.5 提交變更並推送到 GitHub 遠端儲存庫（依約定不執行 build_exe / build_portable 打包）

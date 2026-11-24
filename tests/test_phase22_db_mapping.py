@@ -78,39 +78,78 @@ class TestPhase22DbMapping(unittest.TestCase):
         self.assertEqual(panels2, "PANEL_C")
         self.assertEqual(scrapped2, "0")
 
+    def test_detail_aggregator_integration_with_db_mapping(self) -> None:
+        """驗證 DetailAggregator 在第一彙整時批次查詢 DB 並注入 PanelID, Scrapped 至工作表2"""
+        raw_file = self.tmp_dir / "raw_db_wafer.csv"
+        raw_file.write_text(
+            "2D ID,X,Y,Unit BIN#\n"
+            "MPID_10,1,2,1\n"
+            "MPID_20,3,4,32\n",
+            encoding="utf-8-sig",
+        )
+
+        manifest_csv = self.tmp_dir / "manifest_db.csv"
+        manifest_csv.write_text(
+            "第 1 層目錄,第 1 層搜尋字,第 2 層目錄,第 2 層搜尋字,處理狀態,本地完整路徑\n"
+            f"PKG-SITE-24W,PKG,23BKE002-06-000,23BKE002-06-00,下載成功,{raw_file}\n",
+            encoding="utf-8-sig",
+        )
+
+        out_xlsx = self.tmp_dir / "detail_out_with_db.xlsx"
+        mock_db_map = {
+            ("23BKE002-06-00", "MPID_10", 1, 2): ("PNL_10", "0"),
+            ("23BKE002-06-00", "MPID_20", 3, 4): ("PNL_20A,PNL_20B", "1"),
+        }
+
+        with patch.object(DatabaseConnector, "fetch_wafer_unit_base", return_value=mock_db_map):
+            succeeded, failed, total_written = DetailAggregator.aggregate_to_excel(
+                str(manifest_csv), str(out_xlsx)
+            )
+
+        self.assertEqual(succeeded, 1)
+        self.assertEqual(total_written, 2)
+
+        wb_check = openpyxl.load_workbook(str(out_xlsx))
+        ws2 = wb_check["工作表2"]
+        self.assertEqual(ws2["K1"].value, "PanelID")
+        self.assertEqual(ws2["L1"].value, "Scrapped")
+        self.assertEqual(ws2["M1"].value, "Unit BIN#")
+
+        self.assertEqual(ws2["K2"].value, "PNL_10")
+        self.assertEqual(ws2["L2"].value, "0")
+        self.assertEqual(ws2["M2"].value, 1)
+
+        self.assertEqual(ws2["K3"].value, "PNL_20A,PNL_20B")
+        self.assertEqual(ws2["L3"].value, "1")
+        self.assertEqual(ws2["M3"].value, 32)
+        wb_check.close()
+
     def test_pivot_aggregator_integration_with_panelid_scrapped(self) -> None:
-        """核心整合驗證：RECIPE彙整加入 PanelID 與 Scrapped 欄位，而中繼明細保持不變！"""
+        """核心整合驗證：PivotAggregator 直接消費來源明細/快取的 PanelID 與 Scrapped，免二次連線 DB"""
         src_xlsx = self.tmp_dir / "src_test_db.xlsx"
         writer = SidecarCacheWriter(src_xlsx)
 
-        # 晶片 1: MPID_01 (X=1, Y=2)
-        # 晶片 2: MPID_02 (X=3, Y=4)
+        # 晶片 1: MPID_01 (X=1, Y=2, PanelID=PANEL_X1,PANEL_X2, Scrapped=0,1)
+        # 晶片 2: MPID_02 (X=3, Y=4, PanelID=PANEL_Y1, Scrapped=0)
         rows = [
             (
                 "214-3273242A-24W", "3273242", "23BKE002-06-000", "23BKE002-06-00", "24W",
-                "f1.csv", "MPID_01", "1", "2", "MPID_01_1_2", "1"
+                "f1.csv", "MPID_01", "1", "2", "MPID_01_1_2", "PANEL_X1,PANEL_X2", "0,1", "1"
             ),
             (
                 "214-3273242A-SUB-C", "3273242", "23BKE002-06-000", "23BKE002-06-00", "SUB-C",
-                "f2.csv", "MPID_02", "3", "4", "MPID_02_3_4", "32"
+                "f2.csv", "MPID_02", "3", "4", "MPID_02_3_4", "PANEL_Y1", "0", "32"
             ),
         ]
         src_xlsx.write_bytes(b"MOCK")
         writer.write_batch(rows)
         writer.finalize(src_xlsx)
 
-        # Mock DB 回傳字典
-        mock_db_map = {
-            ("23BKE002-06-00", "MPID_01", 1, 2): ("PANEL_X1,PANEL_X2", "0,1"),
-            ("23BKE002-06-00", "MPID_02", 3, 4): ("PANEL_Y1", "0"),
-        }
-
         pivot_out = self.tmp_dir / "pivot_out_db.xlsx"
 
-        with patch.object(DatabaseConnector, "fetch_wafer_unit_base", return_value=mock_db_map):
-            src_rows, det_rows, sum_rows, _ = PivotAggregator.aggregate_pivot(
-                str(src_xlsx), str(pivot_out)
-            )
+        src_rows, det_rows, sum_rows, _ = PivotAggregator.aggregate_pivot(
+            str(src_xlsx), str(pivot_out)
+        )
 
         self.assertEqual(src_rows, 2)
         self.assertEqual(sum_rows, 2)

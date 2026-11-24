@@ -97,10 +97,10 @@
 5. **雙工作表整合活頁簿產出 (下載與明細彙整 .xlsx)**：
    - 點擊「📊 彙整資料」按鈕後，自動將本地已下載之檔案穿透解析，並與下載清單合併輸出為單一 Excel 活頁簿：`下載與明細彙整_YYYYMMDD_HHMMSS.xlsx`。
    - **Sheet 1 (`下載清單`)**：收錄完整下載清單紀錄，表頭加粗、欄寬自適應。
-   - **Sheet 2 (`工作表2`)**：收錄 11 大晶片明細欄位（第 1 層目錄, PN, 第 2 層目錄, LOT, RECIPE, 檔案名稱, 2D ID (MPID), X (MP_X), Y (MP_Y), MPID_X_Y, Unit BIN#）：
+   - **Sheet 2 (`工作表2`)**：收錄 13 大晶片明細欄位（第 1 層目錄, PN, 第 2 層目錄, LOT, RECIPE, 檔案名稱, 2D ID (MPID), X (MP_X), Y (MP_Y), MPID_X_Y, PanelID, Scrapped, Unit BIN#）：
      - `RECIPE` (雙重保險定位)：優先以 `PN` 為錨點，尋找 `PN` 後面第一個連字號 `-` 之後的所有文字（精準解決無廠區前綴如 `3273173A-DUMMY` 之情況）；若無 PN 則依連字號數量自適應（$\ge 2$ 個取第 2 個之後，1 個取第 1 個之後）。
      - `2D ID (MPID)`、`X`、`Y`、`Unit BIN#`：自動識別前 10 列中之標題行（相容 Tab 與逗號），排除第一欄為 `Hard Limit` 之列。
-     - 格式控制：A~J 欄鎖定為純文字格式 (`@`) 防止前導零遺失，K 欄為數值/文字，表頭粗體並比照原 VBA 設定欄寬（A:24, B:13, C:22, D:22, E:12, F:62, G:21, H:13, I:13, J:28, K:13）。
+     - 格式控制：A~L 欄鎖定為純文字格式 (`@`) 防止前導零遺失（含 PanelID 與 Scrapped），M 欄為數值/文字，表頭粗體並比照原 VBA 設定欄寬（A:24, B:13, C:22, D:22, E:12, F:62, G:21, H:13, I:13, J:28, K:24, L:14, M:13）。
      - **100 萬列自動切頁機制**：單一工作表達 1,000,000 列時自動接續建立 `工作表2_2`、`工作表2_3` 等，徹底消除 Excel 1,048,576 列硬限制截斷資料之風險。
    - **完成互動**：產出完成後彈跳視窗「彙整完成！共寫入 X 筆晶片資料，是否立即開啟 Excel？」，點「是」自動呼叫 Excel 開啟。
 6. **PN / LOT / RECIPE 交叉樞紐分析與權重彙整活頁簿 (彙整資料2)**：
@@ -137,20 +137,22 @@
      - 輸出檔案先於本機 `%TEMP%` 串流寫入，完成後透過 `safe_atomic_move` 搭配指數退避重試搬移至目標路徑，杜絕 Windows Defender / 企業防毒軟體 `WinError 32` 鎖檔干擾。
      - 批次迴圈加入 `sys.intern` 進行字串駐留，峰值記憶體穩定控制在 50 MB 以內。
 
-9. **MS SQL 資料庫對齊整合與 PanelID / Scrapped 欄位注入 (Micro-Phase 22)**：
+9. **MS SQL 資料庫對齊整合前移至彙整 1 (Micro-Phase 22 & 25)**：
    - **連線庫選型與配置**：
      - 採用免安裝 ODBC 驅動、支援純 Python/FreeTDS 的 `pymssql` 連線庫。
      - 獨立連線設定檔 `core/db_config.py`，支援使用者直接填寫帳密常數，並支援 `MSSQL_HOST`、`MSSQL_USER` 等環境變數方便後端部署。
-     - 若未設定資料庫資訊或連線失敗，自動降級留空並記錄警告日誌，不中斷樞紐分析報表之產出。
+     - 若未設定資料庫資訊或連線失敗，自動降級留空並記錄警告日誌，不中斷報表之產出。
    - **對齊鍵值正規化 (Mapping Key Alignment)**：
      - `LotNum`：採用 D 欄母批號 `LOT`。
      - `MPID`：採用 `2D ID (MPID)`。
      - `MP_X` 與 `MP_Y`：強制轉為純整數 `int` 比對（例如 `"01"` 與 `1` 均視為 `1`）。
-   - **巨量查詢效能最佳化**：
-     - 彙整 2 執行前收集所有出現的母批號，以 `SELECT [LotNum], [MPID], [MP_X], [MP_Y], [PanelID], [Scrapped] FROM [dc].[dbo].[YM_ULT_UnitBase] WHERE [LotNum] IN (...)` 進行單一/分批 (500 LOT/批) 查詢。
-     - 載入記憶體 Hash Map 進行 $O(1)$ 秒級 mapping。
+   - **巨量查詢效能最佳化與架構前移 (ETL 前置整合)**：
+     - **彙整 1 (DetailAggregator)** 執行前收集所有出現的母批號，以 `SELECT [LotNum], [MPID], [MP_X], [MP_Y], [PanelID], [Scrapped] FROM [dc].[dbo].[YM_ULT_UnitBase] WHERE [LotNum] IN (...)` 進行單一/分批 (500 LOT/批) 查詢。
+     - 載入記憶體 Hash Map 進行 $O(1)$ 秒級 mapping，直接寫入 `下載與明細彙整.xlsx` 之 `工作表2`（13 欄明細）並持久化至 SQLite 旁路快取 `.cache.db`。
+     - **彙整 2 (PivotAggregator)** 直接從本地快取／明細讀取 `PanelID` 與 `Scrapped`，完全脫鉤資料庫網路連線，達成純本地秒級樞紐運算。
    - **報表欄位結構調整**：
-     - **`RECIPE彙整`**：固定欄位依序調整為 `[PN]` | `[第 2 層目錄(LOT)]` | `[LOT]` | `[MPID_XY]` | **`[PanelID]`** | **`[Scrapped]`** | `[BinCode_sumary]` | (各動態 RECIPE 欄位...)。
+     - **`工作表2 (明細)`**：收錄完整 13 欄（`[第 1 層目錄]` | `[PN]` | `[第 2 層目錄]` | `[LOT]` | `[RECIPE]` | `[檔案名稱]` | `[2D ID (MPID)]` | `[X (MP_X)]` | `[Y (MP_Y)]` | `[MPID_X_Y]` | **`[PanelID]`** | **`[Scrapped]`** | `[Unit BIN#]`）。
+     - **`RECIPE彙整`**：固定欄位依序為 `[PN]` | `[第 2 層目錄(LOT)]` | `[LOT]` | `[MPID_XY]` | **`[PanelID]`** | **`[Scrapped]`** | `[BinCode_sumary]` | (各動態 RECIPE 欄位...)。
      - **`中繼明細`**：維持原始欄位結構不變（不加入 PanelID 與 Scrapped）。
      - 多筆對應處理：同一晶片在 DB 若有多筆記錄，將 PanelID 與 Scrapped 分別進行有序去重，並以純逗號 `,` 串接（如 `Panel1,Panel2`、`0,1`）。
 

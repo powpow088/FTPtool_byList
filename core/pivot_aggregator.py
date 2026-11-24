@@ -214,6 +214,8 @@ class PivotAggregator:
         "X (MP_X)",
         "Y (MP_Y)",
         "MPID_X_Y",
+        "PanelID",
+        "Scrapped",
         "Unit BIN#",
     )
 
@@ -368,7 +370,9 @@ class PivotAggregator:
                 mp_x = sanitize_text_cell(row[7])
                 mp_y = sanitize_text_cell(row[8])
                 mpid_xy_raw = sanitize_text_cell(row[9])
-                unit_bin = sanitize_bin_value(row[10])
+                panel_id_raw = sanitize_text_cell(row[10]) if len(row) > 10 else ""
+                scrapped_raw = sanitize_text_cell(row[11]) if len(row) > 11 else ""
+                unit_bin = sanitize_bin_value(row[12] if len(row) > 12 else (row[10] if len(row) > 10 else ""))
 
                 # 關鍵欄位全為空時略過
                 if not pn_raw and not l2 and not recipe_raw and not mpid and not mpid_xy_raw and not unit_bin:
@@ -442,22 +446,19 @@ class PivotAggregator:
                     s_grp["ids"].append(mpid_xy)
                     s_grp["id_set"][mpid_xy] = s_idx
                     s_grp["full_lists"][s_idx] = [full_lot]
-
-                    # 提取並標準化晶片資訊 (MPID, MP_X_int, MP_Y_int)
-                    x_int = parse_coord_int(mp_x)
-                    y_int = parse_coord_int(mp_y)
-                    if (x_int == 0 and y_int == 0) and mpid_xy:
-                        parts = mpid_xy.split("_")
-                        if len(parts) >= 3 and parts[-1].isdigit() and parts[-2].isdigit():
-                            x_int = parse_coord_int(parts[-2])
-                            y_int = parse_coord_int(parts[-1])
-                    chip_id = mpid
-                    if not chip_id and mpid_xy:
-                        parts = mpid_xy.split("_")
-                        if len(parts) >= 3:
-                            chip_id = "_".join(parts[:-2])
-                    s_grp["chip_meta"][s_idx] = (chip_id, x_int, y_int)
+                    s_grp["chip_meta"][s_idx] = (panel_id_raw, scrapped_raw)
                 else:
+                    s_idx = s_grp["id_set"][mpid_xy]
+                    if full_lot not in s_grp["full_lists"][s_idx]:
+                        s_grp["full_lists"][s_idx].append(full_lot)
+                    curr_panel, curr_scrapped = s_grp["chip_meta"].get(s_idx, ("", ""))
+                    new_panel = curr_panel
+                    new_scrapped = curr_scrapped
+                    if panel_id_raw and panel_id_raw not in curr_panel.split(","):
+                        new_panel = f"{curr_panel},{panel_id_raw}" if curr_panel else panel_id_raw
+                    if scrapped_raw and scrapped_raw not in curr_scrapped.split(","):
+                        new_scrapped = f"{curr_scrapped},{scrapped_raw}" if curr_scrapped else scrapped_raw
+                    s_grp["chip_meta"][s_idx] = (new_panel, new_scrapped)
                     s_idx = s_grp["id_set"][mpid_xy]
                     if full_lot not in s_grp["full_lists"][s_idx]:
                         s_grp["full_lists"][s_idx].append(full_lot)
@@ -557,14 +558,7 @@ class PivotAggregator:
             if log_cb:
                 log_cb("正在產出 [RECIPE彙整] 交叉樞紐表...")
             if progress_cb:
-                progress_cb(0.65, "正在比對資料庫並產出 RECIPE 彙整交叉表...")
-
-            # 批次向 DB 撈取所有母批之晶片資訊 (PanelID, Scrapped)
-            all_mother_lots = []
-            for pn, sum_lots in summaries.items():
-                all_mother_lots.extend(sum_lots.keys())
-
-            db_map = DatabaseConnector.fetch_wafer_unit_base(all_mother_lots, log_cb=log_cb)
+                progress_cb(0.65, "正在產出 RECIPE 彙整交叉表...")
 
             summary_fixed_headers = [
                 "PN", "第 2 層目錄(LOT)", "LOT", "MPID_XY", "PanelID", "Scrapped", "BinCode_sumary"
@@ -592,10 +586,8 @@ class PivotAggregator:
                         row_rank = s_grp["row_ranks"].get(idx, 0)
                         summary_bincode = cls.display_rank(row_rank, whole_row=True)
 
-                        # 比對資料庫 mapping (Lot, MPID, X_int, Y_int)
-                        chip_id, chip_x, chip_y = chip_meta_map.get(idx, ("", 0, 0))
-                        db_match = db_map.get((lot, chip_id, chip_x, chip_y), ("", ""))
-                        panel_id_val, scrapped_val = db_match
+                        # 直接自明細帶出 PanelID 與 Scrapped
+                        panel_id_val, scrapped_val = chip_meta_map.get(idx, ("", ""))
 
                         tail = [""] * tail_cols
                         for rec_id, hit_dict in s_grp["bins"].items():

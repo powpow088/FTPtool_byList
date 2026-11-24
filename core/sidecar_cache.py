@@ -40,6 +40,8 @@ class SidecarCacheWriter:
             mp_x TEXT,
             mp_y TEXT,
             mpid_x_y TEXT,
+            panel_id TEXT,
+            scrapped TEXT,
             unit_bin TEXT
         );
         """,
@@ -47,8 +49,8 @@ class SidecarCacheWriter:
 
     INSERT_SQL = (
         "INSERT INTO wafer_details "
-        "(layer1, pn, layer2, lot, recipe, file_name, mpid, mp_x, mp_y, mpid_x_y, unit_bin) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        "(layer1, pn, layer2, lot, recipe, file_name, mpid, mp_x, mp_y, mpid_x_y, panel_id, scrapped, unit_bin) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     )
 
     def __init__(self, target_xlsx_path: Union[str, Path]):
@@ -220,13 +222,13 @@ class SidecarCacheReader:
     def stream_records(
         cache_path: Union[str, Path], batch_size: int = 50_000
     ) -> Iterator[Tuple[Any, ...]]:
-        """以固定批次大小串流讀取 11 欄明細，記憶體維持恆定"""
+        """以固定批次大小串流讀取 13 欄明細，記憶體維持恆定"""
         conn = sqlite3.connect(f"file:{cache_path}?mode=ro", uri=True)
         try:
             conn.execute("PRAGMA cache_size = 50000;")
             cursor = conn.execute(
                 "SELECT layer1, pn, layer2, lot, recipe, file_name, "
-                "mpid, mp_x, mp_y, mpid_x_y, unit_bin FROM wafer_details"
+                "mpid, mp_x, mp_y, mpid_x_y, panel_id, scrapped, unit_bin FROM wafer_details"
             )
             while True:
                 batch = cursor.fetchmany(batch_size)

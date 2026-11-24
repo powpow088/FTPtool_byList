@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 import xlsxwriter
 
+from core.db_connector import DatabaseConnector, parse_coord_int
 from core.excel_utils import safe_atomic_move, sanitize_xml_text
 from core.sidecar_cache import SidecarCacheWriter
 
@@ -15,6 +16,7 @@ class DetailAggregator:
     彙整資料 1（極速雙軌串流版）：
     - 管道 A：xlsxwriter(constant_memory=True) 寫入 %TEMP% 暫存檔，結束後安全原子搬移
     - 管道 B：同步每 50,000 列寫入 SQLite 旁路快取 (.cache.db)，供彙整 2 秒級讀取
+    - 整合 MS SQL 資料庫撈取 PanelID 與 Scrapped 注入明細第 K, L 欄
     - 完美相容既有介面簽名：aggregate_to_excel(...) -> (succeeded, failed, total_written)
     """
 
@@ -33,15 +35,18 @@ class DetailAggregator:
         "X (MP_X)",
         "Y (MP_Y)",
         "MPID_X_Y",
+        "PanelID",
+        "Scrapped",
         "Unit BIN#",
     ]
 
-    # A~J 欄寬度 (索引 0~9 鎖定純文字 '@')，K 欄 (索引 10) 寬度 13 保留 General/數值格式
+    # A~L 欄寬度 (索引 0~11 鎖定純文字 '@')，M 欄 (索引 12) 寬度 13 保留 General/數值格式
     COLUMN_WIDTHS: Dict[str, int] = {
         "A": 24, "B": 13, "C": 22, "D": 22, "E": 12,
-        "F": 62, "G": 21, "H": 13, "I": 13, "J": 28, "K": 13
+        "F": 62, "G": 21, "H": 13, "I": 13, "J": 28,
+        "K": 24, "L": 14, "M": 13
     }
-    DETAIL_COL_WIDTHS_LIST: Tuple[int, ...] = (24, 13, 22, 22, 12, 62, 21, 13, 13, 28, 13)
+    DETAIL_COL_WIDTHS_LIST: Tuple[int, ...] = (24, 13, 22, 22, 12, 62, 21, 13, 13, 28, 24, 14, 13)
 
     @staticmethod
     def parse_recipe(level1_dir: str, pn: str = "") -> str:
@@ -112,13 +117,15 @@ class DetailAggregator:
         level1: str,
         pn: str,
         level2: str,
-        lot: str
+        lot: str,
+        db_map: Optional[Dict[Tuple[str, str, int, int], Tuple[str, str]]] = None,
     ) -> Tuple[List[List[Any]], Optional[str]]:
         """
         解析單一晶片測試檔案：
         - 搜尋前 10 列中包含 2D ID, X, Y, UNIT BIN# 之標題列（大小寫不敏感，相容逗號與 Tab）
         - 第一欄為 Hard Limit 之列略過不計
         - RECIPE 依 PN 錨點解析
+        - 若提供 db_map，依 (clean_lot, unit_id, x_int, y_int) 對齊填入 PanelID 與 Scrapped
         """
         if not os.path.exists(file_path):
             return [], f"實體檔案不存在: {file_path}"
@@ -168,6 +175,11 @@ class DetailAggregator:
         sub_code = cls.parse_recipe(level1, pn)
         max_col_needed = max(id_col, x_col, y_col, bin_col)
 
+        clean_lot = lot.strip()
+        if not clean_lot and level2.strip():
+            l2_val = level2.strip()
+            clean_lot = l2_val[:-1] if len(l2_val) > 1 else l2_val
+
         rows: List[List[Any]] = []
         for line in lines[header_idx + 1:]:
             if not line.strip():
@@ -197,6 +209,15 @@ class DetailAggregator:
                         except ValueError:
                             final_bin = bin_val
 
+                    panel_id = ""
+                    scrapped = ""
+                    if db_map:
+                        x_int = parse_coord_int(x_val)
+                        y_int = parse_coord_int(y_val)
+                        match_val = db_map.get((clean_lot, unit_id, x_int, y_int))
+                        if match_val:
+                            panel_id, scrapped = match_val
+
                     row = [
                         level1,
                         pn,
@@ -208,6 +229,8 @@ class DetailAggregator:
                         x_val,
                         y_val,
                         mpid_x_y,
+                        panel_id,
+                        scrapped,
                         final_bin
                     ]
                     rows.append(row)
@@ -224,13 +247,13 @@ class DetailAggregator:
     ) -> None:
         """在寫入資料列前鎖定欄寬、純文字格式 (@) 與表頭列（Row 0）"""
         for col_idx, width in enumerate(cls.DETAIL_COL_WIDTHS_LIST):
-            if col_idx <= 9:  # A ~ J 欄：純文字格式 '@'
+            if col_idx <= 11:  # A ~ L 欄 (含 PanelID, Scrapped)：純文字格式 '@'
                 ws.set_column(col_idx, col_idx, width, fmt_text)
-            else:  # K 欄 (Unit BIN#)：保留 General / 數值格式
+            else:  # M 欄 (Unit BIN#)：保留 General / 數值格式
                 ws.set_column(col_idx, col_idx, width)
 
         for col_idx, header_text in enumerate(cls.DETAIL_HEADERS):
-            hdr_fmt = fmt_header_text if col_idx <= 9 else fmt_header_general
+            hdr_fmt = fmt_header_text if col_idx <= 11 else fmt_header_general
             ws.write_string(0, col_idx, header_text, hdr_fmt)
 
     @staticmethod
@@ -340,6 +363,18 @@ class DetailAggregator:
             succeeded_files = 0
             failed_files = 0
 
+            # 提前收集所有有效母批號，批次向 MS SQL 查詢 UnitBase (PanelID, Scrapped)
+            all_mother_lots = set()
+            for _, r, _ in valid_items:
+                l_val = r[lot_col].strip() if lot_col is not None and lot_col < len(r) else ""
+                if not l_val and l2_col is not None and l2_col < len(r):
+                    l2_v = r[l2_col].strip()
+                    l_val = l2_v[:-1] if len(l2_v) > 1 else l2_v
+                if l_val:
+                    all_mother_lots.add(l_val)
+
+            db_map = DatabaseConnector.fetch_wafer_unit_base(sorted(all_mother_lots), log_cb=log_cb)
+
             for file_idx, (r_idx, r, local_path) in enumerate(valid_items, start=1):
                 l1 = r[l1_col].strip() if l1_col is not None and l1_col < len(r) else ""
                 pn = r[pn_col].strip() if pn_col is not None and pn_col < len(r) else ""
@@ -347,7 +382,7 @@ class DetailAggregator:
                 lot = r[lot_col].strip() if lot_col is not None and lot_col < len(r) else ""
 
                 fname = os.path.basename(local_path)
-                parsed_rows, err = cls.parse_single_file(local_path, l1, pn, l2, lot)
+                parsed_rows, err = cls.parse_single_file(local_path, l1, pn, l2, lot, db_map=db_map)
                 if err:
                     failed_files += 1
                     if log_cb:
@@ -368,14 +403,14 @@ class DetailAggregator:
                         )
                         row_in_sheet = 1
 
-                    # A ~ J 欄寫入純文字
-                    for c_idx in range(10):
+                    # A ~ L 欄 (索引 0~11，含 PanelID, Scrapped) 寫入純文字
+                    for c_idx in range(12):
                         v_str = sanitize_xml_text(row_data[c_idx])
                         if v_str:
                             current_ws.write_string(row_in_sheet, c_idx, v_str)
 
-                    # K 欄 (Unit BIN#)
-                    cls._write_bin_cell(current_ws, row_in_sheet, 10, row_data[10])
+                    # M 欄 (Unit BIN#，索引 12)
+                    cls._write_bin_cell(current_ws, row_in_sheet, 12, row_data[12])
 
                     row_in_sheet += 1
                     total_written += 1

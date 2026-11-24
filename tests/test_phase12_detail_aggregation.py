@@ -71,13 +71,15 @@ def test_parse_single_file_formats():
     assert r1[7] == "12"           # X
     assert r1[8] == "34"           # Y
     assert r1[9] == "MPID_001_12_34" # MPID_X_Y
-    assert r1[10] == 1             # Unit BIN# 數字轉 int
+    assert r1[10] == ""            # PanelID (未連線 DB 預設為空)
+    assert r1[11] == ""            # Scrapped (未連線 DB 預設為空)
+    assert r1[12] == 1             # Unit BIN# 數字轉 int
 
     # 驗證 row 3 文字 BIN
     r3 = rows[2]
     assert r3[6] == "MPID_003"
     assert r3[9] == "MPID_003_10_15"
-    assert r3[10] == "FAIL_BIN"
+    assert r3[12] == "FAIL_BIN"
 
     # 2. 建立 Tab 分隔檔案
     tsv_file = test_dir / "wafer_tab.txt"
@@ -97,7 +99,7 @@ def test_parse_single_file_formats():
     assert len(rows_tsv) == 1
     assert rows_tsv[0][6] == "DIE_99"
     assert rows_tsv[0][9] == "DIE_99_1_2"
-    assert rows_tsv[0][10] == 10
+    assert rows_tsv[0][12] == 10
 
     # 3. 建立無效檔案 (找不到標題)
     bad_file = test_dir / "bad.csv"
@@ -183,19 +185,23 @@ def test_aggregate_to_excel_and_sheets():
     assert ws1.cell(row=1, column=1).value == "序號"
     assert ws1.max_row == 4 # 1 header + 3 rows
 
-    # 驗證 Sheet 2: 工作表2
+    # 驗證 Sheet 2: 工作表2 (共 13 欄)
     ws2 = wb["工作表2"]
     assert ws2.cell(row=1, column=1).value == "第 1 層目錄"
     assert ws2.cell(row=1, column=5).value == "RECIPE"
     assert ws2.cell(row=1, column=10).value == "MPID_X_Y"
-    assert ws2.cell(row=1, column=11).value == "Unit BIN#"
+    assert ws2.cell(row=1, column=11).value == "PanelID"
+    assert ws2.cell(row=1, column=12).value == "Scrapped"
+    assert ws2.cell(row=1, column=13).value == "Unit BIN#"
     assert ws2.max_row == 4 # 1 header + 3 detail rows
 
     # 驗證資料行 1
     assert ws2.cell(row=2, column=5).value == "24W"
     assert ws2.cell(row=2, column=7).value == "ID_A1"
     assert ws2.cell(row=2, column=10).value == "ID_A1_10_20"
-    assert ws2.cell(row=2, column=11).value == 1
+    assert ws2.cell(row=2, column=11).value in ("", None)
+    assert ws2.cell(row=2, column=12).value in ("", None)
+    assert ws2.cell(row=2, column=13).value == 1
 
     # 驗證欄寬設定存在
     assert int(ws2.column_dimensions["A"].width) == 24
